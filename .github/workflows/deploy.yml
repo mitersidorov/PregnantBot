@@ -1,0 +1,108 @@
+name: Deploy PregnantBot
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify backend and web app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            apps/backend/package-lock.json
+            apps/webapp/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: apps/backend
+        run: npm ci
+
+      - name: Run backend tests
+        working-directory: apps/backend
+        run: npm test -- --runInBand
+
+      - name: Check backend TypeScript
+        working-directory: apps/backend
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Check backend lint and build
+        working-directory: apps/backend
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Install web app dependencies
+        working-directory: apps/webapp
+        run: npm ci
+
+      - name: Check web app types and build
+        working-directory: apps/webapp
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: apps/webapp
+        run: npx playwright install --with-deps chromium
+
+      - name: Run isolated browser tests
+        working-directory: apps/webapp
+        run: npx playwright test e2e/workflow.spec.ts e2e/responsive.spec.ts e2e/canonical-checklist.spec.ts
+
+  publish:
+    name: Build and publish monolith image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and publish monolith image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/monolith.Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/pregnantbot:prod
+            ${{ secrets.DOCKERHUB_USERNAME }}/pregnantbot:sha-${{ github.sha }}
+          cache-from: type=gha,scope=monolith
+          cache-to: type=gha,mode=max,scope=monolith
+
+  deploy:
+    name: Trigger Dokploy deployment
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: publish
+    steps:
+      - name: Call Dokploy webhook
+        env:
+          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
+        run: |
+          test -n "$DOKPLOY_WEBHOOK_URL"
+          curl --fail --show-error --silent --retry 3 --retry-delay 5 \
+            --request POST "$DOKPLOY_WEBHOOK_URL"

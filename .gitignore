@@ -29,6 +29,7 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage
 *.lcov
+reports/
 
 # nyc test coverage
 .nyc_output
@@ -145,3 +146,6 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Playwright output
+apps/webapp/test-results/
