@@ -1,188 +1,67 @@
-# NestJS Project Template
+# PregnantBot
 
-A production-ready NestJS template with pre-wired infrastructure modules for rapid service development.
+Monorepo for the private two-user Telegram Web App: NestJS API in `apps/backend` and Angular client in `apps/webapp`.
 
+## Production containers
 
-## Tech Stack
+`docker-compose.yml` runs the static Web App and API. Only port `80` is published. Nginx serves Angular and proxies same-origin `/api/*` calls to the internal NestJS service, strips the `/api` prefix, and adds the server-held API key. Telegram `initData` is forwarded unchanged for signature validation. The production MySQL database and private S3 bucket are external services.
 
-| Layer | Technology |
-|---|---|
-| Framework | NestJS 12 (Express) |
-| Language | TypeScript 6 |
-| Database | PostgreSQL + TypeORM 0.3 |
-| Cache | Redis (ioredis) |
-| Object Storage | S3-compatible (Garage locally) |
-| Validation | class-validator + class-transformer |
-| Documentation | Swagger / OpenAPI |
-| Auth | API key guard |
+Configure deployment environment variables from `apps/backend/.env.example` and set the required database, Telegram, S3, API, and CORS values. Start with:
 
-
-## Project Structure
-
-```
-src/
-├── common/
-│   ├── database/          # TypeORM PostgreSQL module + DataSource for CLI migrations
-│   ├── redis/             # Global RedisService with get/set/del/smembers helpers
-│   ├── s3/                # Global S3StorageService (uploadFile, deleteFile)
-│   ├── http/              # HttpService — fetch wrapper with configurable retry + backoff
-│   ├── error/             # Global exception filter → { statusCode, path, message }
-│   ├── logging/           # LoggingService wrapper over NestJS Logger
-│   ├── guards/            # ApiKeyGuard — X-API-KEY header validation
-│   └── dto/               # Shared DTOs: PaginatedResponseDto
-├── health/                # GET /health — app name, env, uptime
-│   ├── controllers/
-│   ├── services/
-│   └── dto/
-├── migrations/            # TypeORM migration files
-├── app.module.ts
-└── main.ts                # Bootstrap: CORS, ValidationPipe, Swagger
+```sh
+docker compose config
+docker compose up --build -d
 ```
 
+## Dokploy deployment
 
-## Infrastructure Modules
+`docker-compose.dokploy.yml` is the production stack for Dokploy. It runs one monolith image containing the Angular app, Nginx same-origin proxy, and NestJS API. Nginx injects the server-side API key, forwards Telegram initData, and routes `/api/*` to the local API. The service joins Dokploy's external `dokploy-network`; MySQL and private S3-compatible storage remain external. Configure the Dokploy domain to route to service `pregnantbot` on port `80`. The container runs database migrations before starting the API.
 
-### `DatabaseModule`
-Connects to PostgreSQL via TypeORM. `autoLoadEntities: true`, `synchronize: false` (migrations-based schema management). Loads Docker secrets before connecting.
-Configured via `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
+The GitHub Actions workflow runs backend tests, typecheck, lint and build, then checks and builds Angular and runs the browser workflow, responsive, and canonical checklist suites. It builds and publishes one `pregnantbot` image with `prod` and commit-SHA tags, then calls the Dokploy webhook. Configure these GitHub Actions repository secrets:
 
-### `RedisModule` (global)
-ioredis client with exponential retry strategy (max 2000ms delay).
-Exposes `RedisService` with `get`, `set` (optional TTL), `del`, `smembers`, `sadd`, `expire`, `isConnected`.
-Configured via `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`.
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN` (Docker Hub access token with permission to push the `pregnantbot` repository)
+- `DOKPLOY_WEBHOOK_URL` (the deploy webhook for the Dokploy Compose application)
 
-### `S3Module` (global)
-AWS SDK v3 S3 client. Gracefully no-ops if credentials are missing — the service throws `InternalServerErrorException` only when an operation is actually attempted.
-Exposes `S3StorageService` with `uploadFile` and `deleteFile`.
-Configured via `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_FORCE_PATH_STYLE`.
+In Dokploy, configure `DOCKERHUB_USERNAME` for the image namespace and all runtime values below. GitHub Actions secrets are used only to publish the image and trigger deployment; they do not populate Dokploy runtime environment variables.
 
-### `HttpModule`
-Native `fetch`-based HTTP client with configurable timeout, retry count, and exponential backoff.
-Import into any feature module that needs to call external services.
-Exposes `HttpService` with `get`, `post`, `put`, `patch`, `delete` convenience methods.
-Configured via `HTTP_TIMEOUT_MS`, `HTTP_RETRIES`, `HTTP_RETRY_DELAY_MS`.
+Runtime variables passed explicitly by the Dokploy stack:
 
-### `ErrorModule`
-Global `APP_FILTER` that catches all unhandled exceptions and returns a consistent JSON error shape:
-```json
-{ "statusCode": 400, "path": "/resource", "message": "Validation failed" }
+- App: `NODE_ENV`, `APP_NAME`, `PORT`, `CORS_ORIGINS`, `SWAGGER_SERVER_URL`
+- Database: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- API and Telegram: `API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_API_BASE_URL`, `TELEGRAM_WIFE_USER_ID`, `TELEGRAM_HUSBAND_USER_ID`, `TELEGRAM_INIT_DATA_MAX_AGE_SECONDS`
+- Storage: `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_FORCE_PATH_STYLE`
+- HTTP client: `HTTP_TIMEOUT_MS`, `HTTP_RETRIES`, `HTTP_RETRY_DELAY_MS`
+- Interpretation: `OPENAI_API_KEY`, `OPENAI_MODEL`
+
+Keep secrets in Dokploy's environment store; never put the API key in Angular build-time variables. The stack requires `OPENAI_API_KEY` so explicit result interpretation is available in production.
+
+## Local integration / E2E stack
+
+The test stack uses MySQL 8.4, Garage for isolated local storage, and a local Telegram API stub. It reads `apps/backend/.env` (ignored by Git) so the backend can use a live `OPENAI_API_KEY`; Compose overrides database, S3, Telegram stub, and API-key settings. The stub counts outbound sendMessage calls without storing message content. Use synthetic medical files only. Never upload real patient documents to the test stack. For local screen testing, the frontend sends the hardcoded user ID `123169226`; the test backend accepts it only with `NODE_ENV=test`, and the web/backend ports bind to loopback. This test identity is not accepted by production.
+
+Start the services and run the Playwright browser suite:
+
+```sh
+docker compose -f docker-compose.test.yml --profile e2e config
+docker compose -f docker-compose.test.yml --profile e2e up --build -d mysql garage backend webapp
+docker compose -f docker-compose.test.yml --profile e2e run --build --rm playwright
 ```
 
-### `LoggingService`
-Thin wrapper over NestJS `Logger`. Always instantiate with a context string via `useFactory`:
-```ts
-{
-  provide: LoggingService,
-  useFactory: () => new LoggingService('MyService'),
-}
+To run the same local API workflow from the host after the services are healthy, use:
+
+```sh
+cd apps/webapp && npm run test:e2e
+cd ../..
+E2E_API_URL=http://127.0.0.1:3010 node docker/live-openai-e2e.mjs
+E2E_API_URL=http://127.0.0.1:3010 node docker/live-openai-e2e.mjs --proxy-check
+cat docker/live-openai-e2e.mjs | docker exec -i pregnantbot-backend-1 node --input-type=module - --verify-download
 ```
 
-### `ApiKeyGuard`
-Validates `X-API-KEY` header against `API_KEY` env var. Apply per-controller or per-route with `@UseGuards(ApiKeyGuard)`.
+The backend image applies migrations and checklist seed before it starts. The `playwright` runner uses the Angular development server and Chromium from the official Playwright image, then makes live OpenAI-backed API calls using a synthetic PDF. It checks proposal/confirmation, wife-only cycle creation, shared history, downloads and archives. The test volumes retain local database and Garage data. Stop containers without removing those volumes:
 
-### `HealthModule`
-Simple `GET /health` endpoint returning `appName`, `environment`, and `uptime`.
-
-
-## Docker Secrets
-
-`loadDockerSecrets()` (called in `main.ts` and `database.module.ts`) reads files from `/run/secrets/` and injects them as environment variables. Existing env vars take precedence, so it is safe to call multiple times.
-
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 24.15+ for development and tests. The Nest CLI also supports Node.js 22.22.3+; runtime-only deployments can use Node.js 22.12+.
-- PostgreSQL
-- Redis
-- Garage (optional, for local S3-compatible storage)
-
-### Setup
-
-```bash
-# Install dependencies
-npm install
-
-# Copy env file and fill in values
-cp .env.example .env
-
-# Run database migrations
-npm run migration:run
-
-# Start in development (watch) mode
-npm run start:dev
+```sh
+docker compose -f docker-compose.test.yml --profile e2e down
 ```
 
-To start the local Garage object storage service, run `docker compose -f docker-compose.test.yml up -d garage`. The sample S3 credentials in `.env.example` are for local development only; do not reuse them in production.
-
-### Swagger UI
-
-Available at: [http://localhost:3000/docs](http://localhost:3000/docs)
-
-### Health check
-
-```
-GET /health
-```
-
-
-## Database Migrations
-
-```bash
-# Generate a new migration after changing entities
-npm run migration:generate -- src/migrations/MigrationName
-
-# Apply pending migrations
-npm run migration:run
-
-# Revert the last migration
-npm run migration:revert
-
-# Show migration status
-npm run migration:show
-```
-
-
-## Testing
-
-```bash
-# Unit tests
-npm run test
-
-# Watch mode
-npm run test:watch
-
-# Coverage report
-npm run test:cov
-
-# E2E tests
-npm run test:e2e
-```
-
-
-## Linting & Formatting
-
-```bash
-# Lint with auto-fix (ESLint)
-npm run lint
-
-# Format source files (Prettier)
-npm run format
-```
-
-ESLint config lives in `eslint.config.mjs`, Prettier config in `.prettierrc`. `printWidth` is set to `120` to match this codebase's existing line-length conventions, and `@typescript-eslint/no-explicit-any` is disabled to match its established use of `any` (see `noImplicitAny: false` in `tsconfig.json`).
-
-
-## Adding a Feature Module
-
-1. Create `src/<feature>/<feature>.module.ts` with controllers, services, and DTOs.
-2. Import `HttpModule` or inject `RedisService` / `S3StorageService` as needed (both are global).
-3. Register the module in `AppModule`.
-4. Generate a migration for any new entities: `npm run migration:generate -- src/migrations/AddFeature`.
-
-
-
-## Environment Variables
-
-See `.env.example` for all variables with descriptions.
+For interactive UI development, start the web app separately with `cd apps/webapp && npm ci && npm start`; configure `apps/webapp/.env.development.local` as described in its README. No data from the test stack should be treated as production data.

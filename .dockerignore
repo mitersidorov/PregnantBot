@@ -1,0 +1,10 @@
+.git
+.idea
+**/node_modules
+**/dist
+**/coverage
+**/.angular
+**/.env
+**/.env.*
+!**/.env.example
+reports

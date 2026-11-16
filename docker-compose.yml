@@ -1,0 +1,44 @@
+# Production application stack. MySQL and S3-compatible storage are external.
+# Configure all required application values in the deployment environment.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: ${DB_HOST:?Set external MySQL DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:?Set external MySQL DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD:?Set external MySQL DB_PASSWORD}
+      DB_NAME: ${DB_NAME:?Set external MySQL DB_NAME}
+      API_KEY: ${API_KEY:?Set API_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN}
+      TELEGRAM_WIFE_USER_ID: ${TELEGRAM_WIFE_USER_ID:?Set Telegram wife user ID}
+      TELEGRAM_HUSBAND_USER_ID: ${TELEGRAM_HUSBAND_USER_ID:?Set Telegram husband user ID}
+      S3_ENDPOINT: ${S3_ENDPOINT:?Set external private S3 endpoint}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:?Set S3_BUCKET}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set app origin}
+      SWAGGER_SERVER_URL: ${SWAGGER_SERVER_URL:-/api}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    expose:
+      - '3000'
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/webapp.Dockerfile
+    environment:
+      API_KEY: ${API_KEY:?Set API_KEY}
+    ports:
+      - '80:80'
+    depends_on:
+      - backend
+    restart: unless-stopped

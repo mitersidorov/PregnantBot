@@ -1,0 +1,44 @@
+# Single-image production stack for Dokploy. Configure these variables in the
+# Dokploy application environment; GitHub Actions secrets are only for publish/deploy.
+services:
+  pregnantbot:
+    image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}/pregnantbot:prod
+    environment:
+      NODE_ENV: ${NODE_ENV:?Set NODE_ENV}
+      APP_NAME: ${APP_NAME:?Set APP_NAME}
+      PORT: ${PORT:?Set backend PORT, normally 3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS}
+      SWAGGER_SERVER_URL: ${SWAGGER_SERVER_URL:-/api}
+      DB_HOST: ${DB_HOST:?Set DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:?Set DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      DB_NAME: ${DB_NAME:?Set DB_NAME}
+      API_KEY: ${API_KEY:?Set API_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      TELEGRAM_WIFE_USER_ID: ${TELEGRAM_WIFE_USER_ID:?Set Telegram wife user ID}
+      TELEGRAM_HUSBAND_USER_ID: ${TELEGRAM_HUSBAND_USER_ID:?Set Telegram husband user ID}
+      TELEGRAM_INIT_DATA_MAX_AGE_SECONDS: ${TELEGRAM_INIT_DATA_MAX_AGE_SECONDS:-86400}
+      S3_ENDPOINT: ${S3_ENDPOINT:?Set S3_ENDPOINT}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:?Set S3_BUCKET}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      HTTP_TIMEOUT_MS: ${HTTP_TIMEOUT_MS:-10000}
+      HTTP_RETRIES: ${HTTP_RETRIES:-3}
+      HTTP_RETRY_DELAY_MS: ${HTTP_RETRY_DELAY_MS:-1000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    expose:
+      - '80'
+    networks:
+      dokploy-network:
+        aliases:
+          - pregnantbot
+    restart: unless-stopped
+
+networks:
+  dokploy-network:
+    external: true

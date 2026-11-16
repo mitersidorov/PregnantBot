@@ -1,87 +1,121 @@
-# Local verification stack. Not for production use.
-# Usage:
-#   docker compose -f docker-compose.test.yml up -d --wait
-#   docker compose -f docker-compose.test.yml logs
-#   docker compose -f docker-compose.test.yml down -v
-
+# Synthetic local integration stack. Requires apps/backend/.env with OPENAI_API_KEY
+# for live interpretation tests. Never use patient documents in this stack.
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.4
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: myapp
-    ports:
-      - '5432:5432'
+      MYSQL_ROOT_PASSWORD: local-root-password
+      MYSQL_DATABASE: pregnantbot
+      MYSQL_USER: pregnantbot
+      MYSQL_PASSWORD: local-pregnantbot-password
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
-      interval: 2s
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-plocal-root-password']
+      interval: 3s
       timeout: 3s
-      retries: 15
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - '6379:6379'
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 2s
-      timeout: 3s
-      retries: 15
+      retries: 30
+    volumes:
+      - e2e-mysql:/var/lib/mysql
 
   garage:
     image: dxflrs/garage:v2.5.0
     command: ['/garage', '-c', '/etc/garage.toml', 'server', '--single-node', '--default-bucket']
     environment:
-      GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY:-GK00000000000000000000000000000000}
-      GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
-      GARAGE_DEFAULT_BUCKET: ${S3_BUCKET:-myapp}
+      GARAGE_DEFAULT_ACCESS_KEY: GK00000000000000000000000000000000
+      GARAGE_DEFAULT_SECRET_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+      GARAGE_DEFAULT_BUCKET: pregnantbot
     volumes:
       - ./docker/garage.toml:/etc/garage.toml:ro
-      - garage-meta:/var/lib/garage/meta
-      - garage-data:/var/lib/garage/data
-    ports:
-      - '3900:3900'
+      - e2e-garage-meta:/var/lib/garage/meta
+      - e2e-garage-data:/var/lib/garage/data
     healthcheck:
       test: ['CMD', '/garage', '-c', '/etc/garage.toml', 'status']
-      interval: 2s
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  telegram-stub:
+    build:
+      context: .
+      dockerfile: docker/telegram-stub.Dockerfile
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
       timeout: 3s
       retries: 15
 
-  app:
-    image: node:22-alpine
-    working_dir: /app
-    volumes:
-      - .:/app
-    command: sh -c "npm ci && npm run build && npm run migration:run && npm run start:prod"
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    env_file:
+      - path: ./apps/backend/.env
+        required: true
     environment:
-      NODE_ENV: development
+      NODE_ENV: test
       PORT: 3000
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: myapp
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ''
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: pregnantbot
+      DB_PASSWORD: local-pregnantbot-password
+      DB_NAME: pregnantbot
       API_KEY: local-test-api-key
+      TELEGRAM_BOT_TOKEN: 123456789:test-token-for-local-e2e-only
+      TELEGRAM_WIFE_USER_ID: '111111111'
+      TELEGRAM_HUSBAND_USER_ID: '222222222'
+      LOCAL_TEST_USER_ID: '123169226'
+      LOCAL_TEST_USER_ROLE: husband
+      TELEGRAM_API_BASE_URL: http://telegram-stub:8080
+      TELEGRAM_STUB_URL: http://telegram-stub:8080
       S3_ENDPOINT: http://garage:3900
       S3_REGION: garage
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-GK00000000000000000000000000000000}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
-      S3_BUCKET: ${S3_BUCKET:-myapp}
-      S3_FORCE_PATH_STYLE: "${S3_FORCE_PATH_STYLE:-true}"
-    ports:
-      - '3000:3000'
+      S3_ACCESS_KEY: GK00000000000000000000000000000000
+      S3_SECRET_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+      S3_BUCKET: pregnantbot
+      S3_FORCE_PATH_STYLE: 'true'
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
+      mysql:
         condition: service_healthy
       garage:
         condition: service_healthy
+      telegram-stub:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:3010:3000'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  webapp:
+    build:
+      context: .
+      dockerfile: docker/webapp.Dockerfile
+    environment:
+      API_KEY: local-test-api-key
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:4200:80'
+
+  playwright:
+    build:
+      context: .
+      dockerfile: docker/playwright.Dockerfile
+    profiles: ['e2e']
+    environment:
+      BACKEND_URL: http://backend:3000
+      PLAYWRIGHT_EXTERNAL_BASE_URL: http://webapp
+      API_KEY: local-test-api-key
+      TELEGRAM_STUB_URL: http://telegram-stub:8080
+      CI: 'true'
+    command: ['sh', '-c', 'npm run test:e2e && node live-openai-e2e.mjs']
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
-  garage-meta:
-  garage-data:
+  e2e-mysql:
+  e2e-garage-meta:
+  e2e-garage-data:
