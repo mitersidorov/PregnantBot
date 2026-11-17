@@ -55,6 +55,16 @@ export class HttpService {
         return '[invalid URL]';
       }
     })();
+    const operation = (() => {
+      try {
+        const path = new URL(url).pathname;
+        if (path.endsWith('/sendMessage')) return 'telegram.sendMessage';
+        if (path.endsWith('/setWebhook')) return 'telegram.setWebhook';
+      } catch {
+        return undefined;
+      }
+      return undefined;
+    })();
 
     for (let attempt = 0; attempt <= retryLimit; attempt++) {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -109,10 +119,16 @@ export class HttpService {
         const isLastAttempt = attempt === retryLimit || error instanceof NonRetryableHttpError;
 
         if (isLastAttempt) {
-          this.logger.error('HTTP request failed after all retries', {
+          const cause = error instanceof Error ? error.cause : undefined;
+          const causeCode = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
+          this.logger.error('External HTTP request failed', undefined, {
             url: safeUrl,
             method,
             attempts: attempt + 1,
+            ...(operation ? { operation } : {}),
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+            errorMessage: error instanceof Error ? error.message.slice(0, 160) : 'Unknown error',
+            ...(causeCode ? { causeCode } : {}),
           });
           throw lastError;
         } else {

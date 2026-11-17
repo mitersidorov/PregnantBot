@@ -20,6 +20,8 @@ The scheduler sends each configured user their outstanding applicable checklist 
 
 `TELEGRAM_API_BASE_URL` optionally overrides the Telegram API origin for local E2E stubs; it defaults to `https://api.telegram.org`. Do not point production at an untrusted endpoint.
 
+The backend must also be able to make outbound HTTPS connections to `api.telegram.org:443`; a reachable incoming webhook does not verify outbound network access. `/start` checks the sender ID against the two role variables and logs the ID and allowlist result. Starting a preparation is intentionally limited to the wife account. Login diagnostics are written for `GET /auth/me` without logging Telegram `initData`; outbound Telegram failures include a sanitized service origin, operation, and network error code. If a reply cannot be sent, the webhook returns an error so Telegram can retry; check the application log and outbound DNS/firewall/proxy settings.
+
 ## API authentication contract
 
 Every API route, including health, requires both headers:
