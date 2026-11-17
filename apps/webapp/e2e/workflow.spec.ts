@@ -325,18 +325,120 @@ test('does not interpret an upload that already contains an OpenAI proposal', as
     buffer: Buffer.from('%PDF synthetic'),
   });
   await expect(page.locator('.upload-review')).toBeVisible();
-  await expect(page.getByText('Already interpreted')).toBeVisible();
+  const alreadyMatched = page.locator('.proposal-finding');
+  await expect(alreadyMatched.locator('.recognized-finding strong')).toHaveText(
+    'Биохимический анализ крови (АЛТ)',
+  );
+  await expect(
+    alreadyMatched.getByLabel('Биохимический анализ крови (АЛТ)', { exact: true }),
+  ).toBeChecked();
+  await expect(page.getByText('Already interpreted')).toHaveCount(0);
   expect(interpretationCalls).toBe(0);
 });
 
 test('reviews checklist-matched findings from a multipage PDF without showing unmatched studies', async ({
   page,
 }) => {
-  const urineId = '00000000-0000-4000-8000-000000000011';
-  const wifeRhId = '00000000-0000-4000-8000-000000000024';
-  const husbandRhId = '00000000-0000-4000-8000-000000000042';
-  const manualId = '12345678-1234-4234-8234-123456789043';
-  let confirmation: Record<string, unknown> | undefined;
+  await page.setViewportSize({ width: 390, height: 1350 });
+  const requirementIds = {
+    wifeSyphilis: '00000000-0000-4000-8000-000000000001',
+    wifeHiv: '00000000-0000-4000-8000-000000000002',
+    wifeHepatitisB: '00000000-0000-4000-8000-000000000003',
+    wifeHepatitisC: '00000000-0000-4000-8000-000000000004',
+    wifeRh: '00000000-0000-4000-8000-000000000024',
+    husbandSyphilis: '00000000-0000-4000-8000-000000000034',
+    husbandHiv: '00000000-0000-4000-8000-000000000035',
+    husbandHepatitisB: '00000000-0000-4000-8000-000000000036',
+    husbandHepatitisC: '00000000-0000-4000-8000-000000000037',
+    husbandRh: '00000000-0000-4000-8000-000000000042',
+  };
+  const checklistRequirements = [
+    [requirementIds.wifeSyphilis, 'Сифилис (anti-Treponema pallidum в крови)', 'wife'],
+    [requirementIds.wifeHiv, 'ВИЧ (комбинированные антитела к ВИЧ и антигену Р24 в крови)', 'wife'],
+    [requirementIds.wifeHepatitisB, 'Гепатит B (поверхностный антиген HBsAg)', 'wife'],
+    [requirementIds.wifeHepatitisC, 'Гепатит C (antiHCV, антитела в крови)', 'wife'],
+    [requirementIds.wifeRh, 'Группа крови, резус-фактор', 'wife'],
+    [requirementIds.husbandSyphilis, 'Сифилис (anti-Treponema pallidum в крови)', 'husband'],
+    [
+      requirementIds.husbandHiv,
+      'ВИЧ (комбинированные антитела к ВИЧ и антигену Р24 в крови)',
+      'husband',
+    ],
+    [requirementIds.husbandHepatitisB, 'Гепатит B (поверхностный антиген HBsAg)', 'husband'],
+    [requirementIds.husbandHepatitisC, 'Гепатит C (antiHCV, антитела в крови)', 'husband'],
+    [requirementIds.husbandRh, 'Группа крови, резус-фактор', 'husband'],
+  ] as const;
+  const multipageFindings = [
+    { testName: 'Общий анализ мочи', resultDate: '2026-11-15', summary: null, pageNumber: 1 },
+    {
+      testName: 'Гинекологический мазок (анализ на флору)',
+      resultDate: null,
+      summary: null,
+      pageNumber: 2,
+    },
+    { testName: 'Общий анализ крови', resultDate: null, summary: null, pageNumber: 4 },
+    {
+      testName: 'HIV Ag/Ab + P24',
+      resultDate: null,
+      summary: 'Описание результата, скрытое в обзоре',
+      pageNumber: 6,
+    },
+    { testName: 'Коагулограмма (ПТИ)', resultDate: null, summary: null, pageNumber: 6 },
+    { testName: 'Коагулограмма (PT)', resultDate: null, summary: null, pageNumber: 6 },
+    { testName: 'Коагулограмма (ИНР)', resultDate: null, summary: null, pageNumber: 7 },
+    { testName: 'Коагулограмма (aPTT)', resultDate: null, summary: null, pageNumber: 7 },
+    {
+      testName: 'Биохимический анализ крови (глюкоза)',
+      resultDate: null,
+      summary: null,
+      pageNumber: 8,
+    },
+    {
+      testName: 'anti-Treponema',
+      resultDate: null,
+      summary: 'Описание результата, скрытое в обзоре',
+      pageNumber: 8,
+    },
+    {
+      testName: 'HBsAg',
+      resultDate: null,
+      summary: 'Описание результата, скрытое в обзоре',
+      pageNumber: 8,
+    },
+    {
+      testName: 'anti-HCV',
+      resultDate: null,
+      summary: 'Описание результата, скрытое в обзоре',
+      pageNumber: 8,
+    },
+    {
+      testName: 'Blood group and Rh factor',
+      resultDate: null,
+      summary: 'Описание результата, скрытое в обзоре',
+      pageNumber: 9,
+    },
+  ];
+  const matchedFindings = [
+    { findingIndex: 3, requirementIds: [requirementIds.husbandHiv] },
+    { findingIndex: 9, requirementIds: [requirementIds.husbandSyphilis] },
+    { findingIndex: 10, requirementIds: [requirementIds.husbandHepatitisB] },
+    { findingIndex: 11, requirementIds: [requirementIds.husbandHepatitisC] },
+    { findingIndex: 12, requirementIds: [requirementIds.husbandRh] },
+  ].map(({ findingIndex, requirementIds: matches }) => ({
+    ...multipageFindings[findingIndex],
+    findingIndex,
+    requirementIds: matches,
+  }));
+  const singleFinding = {
+    testName: 'Blood group and Rh factor',
+    resultDate: '2026-11-15',
+    summary: 'Описание результата, скрытое в обзоре',
+    pageNumber: 1,
+    findingIndex: 0,
+    requirementIds: [requirementIds.husbandRh],
+  };
+  let uploadNumber = 0;
+  const confirmations: Record<string, unknown>[] = [];
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -350,101 +452,59 @@ test('reviews checklist-matched findings from a multipage PDF without showing un
       return route.fulfill({
         json: {
           id: 'cycle-multi',
-          checklist: [
-            {
-              requirementId: urineId,
-              status: 'pending',
-              requirement: { id: urineId, name: 'Общий анализ мочи', patientApplicability: 'wife' },
-            },
-            {
-              requirementId: wifeRhId,
-              status: 'pending',
-              requirement: {
-                id: wifeRhId,
-                name: 'Группа крови, резус-фактор',
-                patientApplicability: 'wife',
-              },
-            },
-            {
-              requirementId: husbandRhId,
-              status: 'pending',
-              requirement: {
-                id: husbandRhId,
-                name: 'Группа крови, резус-фактор',
-                patientApplicability: 'husband',
-              },
-            },
-            {
-              requirementId: manualId,
-              status: 'pending',
-              requirement: {
-                id: manualId,
-                name: 'Дополнительное обследование',
-                patientApplicability: 'wife',
-              },
-            },
-          ],
+          checklist: checklistRequirements.map(([id, name, patientApplicability]) => ({
+            requirementId: id,
+            status: 'pending',
+            requirement: { id, name, patientApplicability },
+          })),
         },
       });
     if (url.pathname.endsWith('/records') && request.method() === 'GET')
       return route.fulfill({ json: [] });
-    if (url.pathname.endsWith('/records/uploads'))
+    if (url.pathname.endsWith('/records/uploads')) {
+      uploadNumber += 1;
       return route.fulfill({
         status: 201,
         json: {
           file: {
-            id: 'file-multi',
-            originalName: 'multi-page.pdf',
+            id: uploadNumber === 1 ? 'file-multi' : 'file-single',
+            originalName: uploadNumber === 1 ? 'lab-results-multipage.pdf' : 'blood-rh-single.pdf',
             uploadedBy: '288092250',
             uploadedAt: '2026-11-15',
           },
-          result: { id: 'result-multi', versionNumber: 1, interpretationStatus: 'pending' },
+          result: {
+            id: uploadNumber === 1 ? 'result-multi' : 'result-single',
+            versionNumber: 1,
+            interpretationStatus: 'pending',
+          },
         },
       });
-    if (url.pathname.endsWith('/interpret'))
-      return route.fulfill({
-        status: 200,
-        json: {
-          id: 'result-multi',
-          versionNumber: 1,
-          testName: 'Общий анализ мочи',
-          resultDate: '2026-10-01',
-          summary: 'Результат мочи.',
-          interpretationStatus: 'proposed',
-          extractedFindings: [
-            {
-              testName: 'Общий анализ мочи',
-              resultDate: '2026-10-01',
-              summary: 'Результат мочи.',
-              pageNumber: 1,
-            },
-            {
-              testName: 'Группа крови, резус-фактор',
-              resultDate: '2018-04-12',
-              summary: 'Группа крови и резус-фактор.',
-              pageNumber: 9,
-            },
-            {
-              testName: 'Неизвестный анализ',
-              resultDate: '2026-10-02',
-              summary: 'Результат неизвестного анализа.',
-              pageNumber: 12,
-            },
-          ],
-          matchedFindings: [
-            {
-              testName: 'Группа крови, резус-фактор',
-              resultDate: '2018-04-12',
-              summary: 'Группа крови и резус-фактор.',
-              pageNumber: 9,
-              findingIndex: 1,
-              requirementIds: [husbandRhId],
-            },
-          ],
-        },
-      });
+    }
+    if (url.pathname.endsWith('/interpret')) {
+      const proposal =
+        uploadNumber === 1
+          ? {
+              id: 'result-multi',
+              testName: multipageFindings[0].testName,
+              resultDate: '2026-11-15',
+              summary: null,
+              interpretationStatus: 'proposed',
+              extractedFindings: multipageFindings,
+              matchedFindings,
+            }
+          : {
+              id: 'result-single',
+              testName: singleFinding.testName,
+              resultDate: singleFinding.resultDate,
+              summary: singleFinding.summary,
+              interpretationStatus: 'proposed',
+              extractedFindings: [singleFinding],
+              matchedFindings: [singleFinding],
+            };
+      return route.fulfill({ status: 200, json: proposal });
+    }
     if (url.pathname.endsWith('/confirm')) {
-      confirmation = request.postDataJSON();
+      confirmations.push(request.postDataJSON());
       return route.fulfill({ status: 200, json: {} });
     }
     return route.fulfill({ json: {} });
@@ -460,29 +520,106 @@ test('reviews checklist-matched findings from a multipage PDF without showing un
     new URL(response.url()).pathname.endsWith('/interpret'),
   );
   await page.locator('#file').setInputFiles({
-    name: 'multi-page.pdf',
+    name: 'lab-results-multipage.pdf',
     mimeType: 'application/pdf',
     buffer: Buffer.from('%PDF synthetic multipage'),
   });
   const interpreted = await (await interpretationResponse).json();
-  expect(interpreted.extractedFindings).toHaveLength(3);
-  expect(interpreted.matchedFindings).toHaveLength(1);
+  expect(interpreted.extractedFindings).toHaveLength(multipageFindings.length);
+  expect(interpreted.matchedFindings).toHaveLength(5);
+  const multipageTitles = [
+    'HIV Ag/Ab + P24',
+    'anti-Treponema',
+    'HBsAg',
+    'anti-HCV',
+    'Blood group and Rh factor',
+  ];
+  const requirementNames = [
+    'ВИЧ (комбинированные антитела к ВИЧ и антигену Р24 в крови)',
+    'Сифилис (anti-Treponema pallidum в крови)',
+    'Гепатит B (поверхностный антиген HBsAg)',
+    'Гепатит C (antiHCV, антитела в крови)',
+    'Группа крови, резус-фактор',
+  ];
+  const matchedPages = [6, 8, 8, 8, 9];
+  await expect(page.locator('.proposal-finding')).toHaveCount(5);
+  for (let index = 0; index < multipageTitles.length; index += 1) {
+    const row = page.locator('.proposal-finding').nth(index);
+    await expect(row.getByText(multipageTitles[index], { exact: true })).toHaveCount(1);
+    await expect(row.locator('.finding-meta')).toContainText('Для мужа');
+    await expect(row.locator('.finding-meta')).toContainText('15.11.2026');
+    await expect(row.locator('.finding-meta')).toContainText(`Страница ${matchedPages[index]}`);
+    await expect(row.getByLabel(requirementNames[index], { exact: true })).toBeChecked();
+  }
+  await expect(page.getByText('Описание результата, скрытое в обзоре')).toHaveCount(0);
   await expect(page.getByText('Общий анализ мочи', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Группа крови, резус-фактор', { exact: true }).first()).toBeVisible();
-  const rhFinding = page.getByRole('group', { name: 'Группа крови, резус-фактор' });
-  await expect(rhFinding.getByLabel(/женщина/)).toHaveCount(0);
-  await expect(rhFinding.getByLabel(/мужчина/)).toBeVisible();
-  await expect(page.getByText(/^Страница /)).toHaveCount(0);
-  await expect(page.getByText('Неизвестный анализ', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Совпадение с чеклистом не найдено.')).toHaveCount(0);
+  await expect(page.getByText('Общий анализ крови', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.proposal-result fieldset')).toHaveCount(0);
+  if (process.env.CAPTURE_MULTIPAGE_SCREENSHOT) {
+    await page
+      .locator('.proposal-result')
+      .screenshot({ path: process.env.CAPTURE_MULTIPAGE_SCREENSHOT });
+  }
+  const hivCheckbox = page.getByLabel(requirementNames[0], { exact: true });
+  await hivCheckbox.uncheck();
+  await expect(hivCheckbox).not.toBeChecked();
+  await hivCheckbox.check();
+  await expect(hivCheckbox).toBeChecked();
   await page.getByRole('button', { name: 'Подтвердить' }).click();
   await expect(page.getByText('Анализ подтверждён.')).toBeVisible();
-  expect(confirmation?.requirementIds).toEqual([husbandRhId]);
-  expect(confirmation?.extractedFindings).toEqual([
-    expect.objectContaining({ pageNumber: 1, requirementIds: [] }),
-    expect.objectContaining({ pageNumber: 9, requirementIds: [husbandRhId] }),
-    expect.objectContaining({ pageNumber: 12, requirementIds: [] }),
+  expect(confirmations[0].requirementIds).toEqual([
+    requirementIds.husbandHiv,
+    requirementIds.husbandSyphilis,
+    requirementIds.husbandHepatitisB,
+    requirementIds.husbandHepatitisC,
+    requirementIds.husbandRh,
   ]);
+  const confirmedFindings = confirmations[0].extractedFindings as {
+    pageNumber: number;
+    requirementIds: string[];
+  }[];
+  expect(
+    confirmedFindings.map(({ pageNumber, requirementIds: ids }) => ({ pageNumber, ids })),
+  ).toEqual([
+    { pageNumber: 1, ids: [] },
+    { pageNumber: 2, ids: [] },
+    { pageNumber: 4, ids: [] },
+    { pageNumber: 6, ids: [requirementIds.husbandHiv] },
+    { pageNumber: 6, ids: [] },
+    { pageNumber: 6, ids: [] },
+    { pageNumber: 7, ids: [] },
+    { pageNumber: 7, ids: [] },
+    { pageNumber: 8, ids: [] },
+    { pageNumber: 8, ids: [requirementIds.husbandSyphilis] },
+    { pageNumber: 8, ids: [requirementIds.husbandHepatitisB] },
+    { pageNumber: 8, ids: [requirementIds.husbandHepatitisC] },
+    { pageNumber: 9, ids: [requirementIds.husbandRh] },
+  ]);
+
+  const singleInterpretation = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.endsWith('/interpret'),
+  );
+  await page.locator('#file').setInputFiles({
+    name: 'blood-rh-single.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF synthetic single page'),
+  });
+  const singleResult = await (await singleInterpretation).json();
+  expect(singleResult.extractedFindings).toHaveLength(1);
+  expect(singleResult.matchedFindings).toHaveLength(1);
+  const singleRow = page.locator('.proposal-finding');
+  await expect(singleRow).toHaveCount(1);
+  await expect(singleRow.getByText('Blood group and Rh factor', { exact: true })).toHaveCount(1);
+  await expect(singleRow.locator('.finding-meta')).toContainText('Для мужа');
+  await expect(singleRow.locator('.finding-meta')).toContainText('15.11.2026');
+  await expect(singleRow.locator('.finding-meta')).toContainText('Страница 1');
+  await expect(singleRow.getByLabel('Группа крови, резус-фактор', { exact: true })).toBeChecked();
+  await expect(page.getByText('Описание результата, скрытое в обзоре')).toHaveCount(0);
+  if (process.env.CAPTURE_SINGLEPAGE_SCREENSHOT) {
+    await page
+      .locator('.proposal-result')
+      .screenshot({ path: process.env.CAPTURE_SINGLEPAGE_SCREENSHOT });
+  }
 });
 
 for (const role of ['wife', 'husband'] as const) {
