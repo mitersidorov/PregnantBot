@@ -194,7 +194,9 @@ test('start preparation, interpret a pending upload once, confirm it and browse 
   await expect.poll(() => interpretCalls).toBe(1);
   releaseInterpret();
   await expect(page.locator('.upload-review')).toBeVisible();
-  await expect(page.getByText('Spermogram', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.proposal-result').getByText('Spermogram', { exact: true }).first(),
+  ).toBeVisible();
   expect(interpretCalls).toBe(1);
   await page.getByLabel('Норма', { exact: true }).check();
   await page.getByRole('button', { name: 'Подтвердить' }).click();
