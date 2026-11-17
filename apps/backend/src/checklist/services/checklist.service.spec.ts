@@ -148,6 +148,66 @@ describe('ChecklistService', () => {
     ]);
   });
 
+  it('uses the result date belonging to each finding when applying checklist links', async () => {
+    const manager = {
+      query: jest.fn<(query: string, parameters: unknown[]) => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const service = new ChecklistService({} as never, {} as never, {} as never);
+    const result = {
+      id: 'result-1',
+      resultDate: '2026-10-01',
+      extractedFindings: [
+        {
+          testName: 'Общий анализ мочи',
+          resultDate: '2026-10-01',
+          summary: null,
+          pageNumber: 1,
+          requirementIds: ['urinalysis'],
+        },
+        {
+          testName: 'Группа крови, резус-фактор',
+          resultDate: '2018-04-12',
+          summary: null,
+          pageNumber: 9,
+          requirementIds: ['rh-factor'],
+        },
+      ],
+      normality: null,
+    };
+
+    await service.applyConfirmedResult(manager as never, result as MedicalResult, [
+      { id: 'urinalysis' } as Requirement,
+      { id: 'rh-factor' } as Requirement,
+    ]);
+
+    expect(manager.query.mock.calls.map(([, params]) => params)).toEqual([
+      ['result-1', 'urinalysis', '2026-10-01', '2026-10-01', ''],
+      ['result-1', 'rh-factor', '2018-04-12', '2018-04-12', ''],
+    ]);
+  });
+
+  it('does not substitute another finding’s date when a linked finding date is unknown', async () => {
+    const manager = {
+      query: jest.fn<(query: string, parameters: unknown[]) => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const service = new ChecklistService({} as never, {} as never, {} as never);
+
+    await service.applyConfirmedResult(
+      manager as never,
+      {
+        id: 'result-1',
+        resultDate: '2026-10-01',
+        extractedFindings: [
+          { testName: 'Study A', resultDate: '2026-10-01', summary: null, pageNumber: 1, requirementIds: ['req-a'] },
+          { testName: 'Study B', resultDate: null, summary: null, pageNumber: 2, requirementIds: ['req-b'] },
+        ],
+      } as MedicalResult,
+      [{ id: 'req-b' } as Requirement],
+    );
+
+    expect(manager.query.mock.calls[0]?.[1]).toEqual(['result-1', 'req-b', null, null, '']);
+  });
+
   it('resets active progress when a linked result is superseded', async () => {
     const manager = {
       query: jest.fn<(query: string, parameters: unknown[]) => Promise<void>>().mockResolvedValue(undefined),

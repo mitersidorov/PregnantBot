@@ -14,6 +14,13 @@ Each entry is tagged with the branch it was made on.
 
 ---
 
+## [hot-fix/multipage-pdf-extraction] — 2026-11-17
+
+### Updated
+- OpenAI PDF interpretation requests high-detail processing, extracts distinct studies across all pages, and records source page numbers.
+- Persists and displays every finding, maps checklist requirements per finding, and uses each finding's own result date for checklist validity and reminders.
+- Adds a browser workflow test for a multipage PDF with studies on page 1 and page 9.
+
 ## [dev/nestjs-template-cleanup] — 2026-11-15
 
 ### Added

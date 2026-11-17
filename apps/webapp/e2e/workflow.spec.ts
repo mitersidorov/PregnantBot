@@ -194,7 +194,9 @@ test('start preparation, interpret a pending upload once, confirm it and browse 
   await expect.poll(() => interpretCalls).toBe(1);
   releaseInterpret();
   await expect(page.locator('.upload-review')).toBeVisible();
-  await expect(page.getByText('Spermogram', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.proposal-result').getByText('Spermogram', { exact: true }).first(),
+  ).toBeVisible();
   expect(interpretCalls).toBe(1);
   await page.getByLabel('Норма', { exact: true }).check();
   await page.getByRole('button', { name: 'Подтвердить' }).click();
@@ -294,6 +296,141 @@ test('does not interpret an upload that already contains an OpenAI proposal', as
   await expect(page.locator('.upload-review')).toBeVisible();
   await expect(page.getByText('Already interpreted')).toBeVisible();
   expect(interpretationCalls).toBe(0);
+});
+
+test('reviews every finding from a multipage PDF and confirms each checklist mapping', async ({
+  page,
+}) => {
+  const urineId = '00000000-0000-4000-8000-000000000011';
+  const rhFactorId = '00000000-0000-4000-8000-000000000042';
+  const manualId = '12345678-1234-4234-8234-123456789043';
+  let confirmation: Record<string, unknown> | undefined;
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/auth/me'))
+      return route.fulfill({ json: { patientRole: 'wife', telegramUserId: '288092250' } });
+    if (url.pathname.endsWith('/cycles') && request.method() === 'GET')
+      return route.fulfill({
+        json: [{ id: 'cycle-multi', startDate: '2026-11-15', status: 'active' }],
+      });
+    if (url.pathname.endsWith('/cycles/cycle-multi'))
+      return route.fulfill({
+        json: {
+          id: 'cycle-multi',
+          checklist: [
+            {
+              requirementId: urineId,
+              status: 'pending',
+              requirement: { id: urineId, name: 'Общий анализ мочи', patientApplicability: 'wife' },
+            },
+            {
+              requirementId: rhFactorId,
+              status: 'pending',
+              requirement: {
+                id: rhFactorId,
+                name: 'Группа крови, резус-фактор',
+                patientApplicability: 'wife',
+              },
+            },
+            {
+              requirementId: manualId,
+              status: 'pending',
+              requirement: {
+                id: manualId,
+                name: 'Дополнительное обследование',
+                patientApplicability: 'wife',
+              },
+            },
+          ],
+        },
+      });
+    if (url.pathname.endsWith('/records') && request.method() === 'GET')
+      return route.fulfill({ json: [] });
+    if (url.pathname.endsWith('/records/uploads'))
+      return route.fulfill({
+        status: 201,
+        json: {
+          file: {
+            id: 'file-multi',
+            originalName: 'multi-page.pdf',
+            uploadedBy: '288092250',
+            uploadedAt: '2026-11-15',
+          },
+          result: { id: 'result-multi', versionNumber: 1, interpretationStatus: 'pending' },
+        },
+      });
+    if (url.pathname.endsWith('/interpret'))
+      return route.fulfill({
+        status: 200,
+        json: {
+          id: 'result-multi',
+          versionNumber: 1,
+          testName: 'Общий анализ мочи',
+          resultDate: '2026-10-01',
+          summary: 'Результат мочи.',
+          interpretationStatus: 'proposed',
+          extractedFindings: [
+            {
+              testName: 'Общий анализ мочи',
+              resultDate: '2026-10-01',
+              summary: 'Результат мочи.',
+              pageNumber: 1,
+            },
+            {
+              testName: 'Группа крови, резус-фактор',
+              resultDate: '2018-04-12',
+              summary: 'Группа крови и резус-фактор.',
+              pageNumber: 9,
+            },
+            {
+              testName: 'Неизвестный анализ',
+              resultDate: '2026-10-02',
+              summary: 'Результат неизвестного анализа.',
+              pageNumber: 12,
+            },
+          ],
+        },
+      });
+    if (url.pathname.endsWith('/confirm')) {
+      confirmation = request.postDataJSON();
+      return route.fulfill({ status: 200, json: {} });
+    }
+    return route.fulfill({ json: {} });
+  });
+  await page.addInitScript(() => {
+    (window as Window & { Telegram?: unknown }).Telegram = {
+      WebApp: { initData: 'synthetic', initDataUnsafe: { user: { id: 288092250 } } },
+    };
+  });
+
+  await page.goto('/');
+  const interpretationResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.endsWith('/interpret'),
+  );
+  await page.locator('#file').setInputFiles({
+    name: 'multi-page.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF synthetic multipage'),
+  });
+  expect((await (await interpretationResponse).json()).extractedFindings).toHaveLength(3);
+  await expect(page.getByText('Общий анализ мочи', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Группа крови, резус-фактор', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Страница 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Страница 9', { exact: true })).toBeVisible();
+  await expect(page.getByText('Неизвестный анализ', { exact: true }).first()).toBeVisible();
+  await page
+    .getByRole('group', { name: 'Неизвестный анализ' })
+    .getByLabel(/Дополнительное обследование/)
+    .check();
+  await page.getByRole('button', { name: 'Подтвердить' }).click();
+  await expect(page.getByText('Анализ подтверждён.')).toBeVisible();
+  expect(confirmation?.requirementIds).toEqual([urineId, rhFactorId, manualId]);
+  expect(confirmation?.extractedFindings).toEqual([
+    expect.objectContaining({ pageNumber: 1, requirementIds: [urineId] }),
+    expect.objectContaining({ pageNumber: 9, requirementIds: [rhFactorId] }),
+    expect.objectContaining({ pageNumber: 12, requirementIds: [manualId] }),
+  ]);
 });
 
 for (const role of ['wife', 'husband'] as const) {
