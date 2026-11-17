@@ -47,6 +47,7 @@ export interface MedicalResult {
   resultDate?: string;
   summary?: string;
   extractedFindings?: ExtractedFinding[] | null;
+  matchedFindings?: ChecklistMatchedFinding[];
   normality?: 'normal' | 'abnormal' | null;
   interpretationStatus: string;
   supersededBy?: string | null;
@@ -58,6 +59,10 @@ export interface ExtractedFinding {
   summary: string | null;
   pageNumber: number | null;
   requirementIds?: string[];
+}
+export interface ChecklistMatchedFinding extends ExtractedFinding {
+  findingIndex: number;
+  requirementIds: string[];
 }
 @Injectable({ providedIn: 'root' })
 export class PregnantBotApi {

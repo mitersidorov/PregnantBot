@@ -30,6 +30,27 @@ describe('RecordsController download', () => {
   });
 });
 
+describe('RecordsController interpretation', () => {
+  it('passes the authenticated role so the proposal can include role-matched findings', async () => {
+    const service = {
+      interpret: jest.fn(async (id: string, userId: number, role: 'wife' | 'husband') => {
+        void id;
+        void userId;
+        void role;
+        return { id: 'result-id' };
+      }),
+    };
+    const controller = new RecordsController(service as never);
+
+    await controller.interpret('result-id', {
+      telegramUser: { id: 101 },
+      patientRole: 'wife',
+    } as never);
+
+    expect(service.interpret).toHaveBeenCalledWith('result-id', 101, 'wife');
+  });
+});
+
 describe('RecordsController throttling metadata', () => {
   it('limits uploads to 10/minute and interpretation to 5/minute', () => {
     expect(Reflect.getMetadata('THROTTLER:LIMITdefault', RecordsController.prototype.upload)).toBe(10);

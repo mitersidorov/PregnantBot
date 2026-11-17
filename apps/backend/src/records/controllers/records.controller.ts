@@ -105,7 +105,7 @@ export class RecordsController {
   @ApiResponse({ status: 409, description: 'Result is not the current pending version.', type: ErrorResponseDto })
   @ApiResponse({ status: 503, description: 'OpenAI interpretation is unavailable or failed.', type: ErrorResponseDto })
   interpret(@Param('id') id: string, @Req() request: AuthorizedRequest) {
-    return this.service.interpret(id, request.telegramUser.id);
+    return this.service.interpret(id, request.telegramUser.id, request.patientRole);
   }
   @Post('results/:id/confirm')
   @HttpCode(200)

@@ -298,7 +298,7 @@ test('does not interpret an upload that already contains an OpenAI proposal', as
   expect(interpretationCalls).toBe(0);
 });
 
-test('reviews every finding from a multipage PDF and confirms each checklist mapping', async ({
+test('reviews checklist-matched findings from a multipage PDF without showing unmatched studies', async ({
   page,
 }) => {
   const urineId = '00000000-0000-4000-8000-000000000011';
@@ -390,6 +390,24 @@ test('reviews every finding from a multipage PDF and confirms each checklist map
               pageNumber: 12,
             },
           ],
+          matchedFindings: [
+            {
+              testName: 'Общий анализ мочи',
+              resultDate: '2026-10-01',
+              summary: 'Результат мочи.',
+              pageNumber: 1,
+              findingIndex: 0,
+              requirementIds: [urineId],
+            },
+            {
+              testName: 'Группа крови, резус-фактор',
+              resultDate: '2018-04-12',
+              summary: 'Группа крови и резус-фактор.',
+              pageNumber: 9,
+              findingIndex: 1,
+              requirementIds: [rhFactorId],
+            },
+          ],
         },
       });
     if (url.pathname.endsWith('/confirm')) {
@@ -413,23 +431,21 @@ test('reviews every finding from a multipage PDF and confirms each checklist map
     mimeType: 'application/pdf',
     buffer: Buffer.from('%PDF synthetic multipage'),
   });
-  expect((await (await interpretationResponse).json()).extractedFindings).toHaveLength(3);
+  const interpreted = await (await interpretationResponse).json();
+  expect(interpreted.extractedFindings).toHaveLength(3);
+  expect(interpreted.matchedFindings).toHaveLength(2);
   await expect(page.getByText('Общий анализ мочи', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Группа крови, резус-фактор', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Страница 1', { exact: true })).toBeVisible();
-  await expect(page.getByText('Страница 9', { exact: true })).toBeVisible();
-  await expect(page.getByText('Неизвестный анализ', { exact: true }).first()).toBeVisible();
-  await page
-    .getByRole('group', { name: 'Неизвестный анализ' })
-    .getByLabel(/Дополнительное обследование/)
-    .check();
+  await expect(page.getByText(/^Страница /)).toHaveCount(0);
+  await expect(page.getByText('Неизвестный анализ', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Совпадение с чеклистом не найдено.')).toHaveCount(0);
   await page.getByRole('button', { name: 'Подтвердить' }).click();
   await expect(page.getByText('Анализ подтверждён.')).toBeVisible();
-  expect(confirmation?.requirementIds).toEqual([urineId, rhFactorId, manualId]);
+  expect(confirmation?.requirementIds).toEqual([urineId, rhFactorId]);
   expect(confirmation?.extractedFindings).toEqual([
     expect.objectContaining({ pageNumber: 1, requirementIds: [urineId] }),
     expect.objectContaining({ pageNumber: 9, requirementIds: [rhFactorId] }),
-    expect.objectContaining({ pageNumber: 12, requirementIds: [manualId] }),
+    expect.objectContaining({ pageNumber: 12, requirementIds: [] }),
   ]);
 });
 

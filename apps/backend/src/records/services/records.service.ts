@@ -20,7 +20,7 @@ import { MedicalFile } from '../entities/medical-file.entity';
 import { MedicalResult } from '../entities/medical-result.entity';
 import { InterpretationService } from './interpretation.service';
 import type { UploadedMedicalFile } from '../types/uploaded-medical-file.interface';
-import type { ExtractedFinding } from '../types/extracted-finding.interface';
+import type { ChecklistMatchedFinding, ExtractedFinding } from '../types/extracted-finding.interface';
 
 @Injectable()
 export class RecordsService {
@@ -125,7 +125,11 @@ export class RecordsService {
     })();
     return stream;
   }
-  async interpret(resultId: string, userId: number): Promise<MedicalResult> {
+  async interpret(
+    resultId: string,
+    userId: number,
+    role: 'wife' | 'husband',
+  ): Promise<MedicalResult & { matchedFindings: ChecklistMatchedFinding[] }> {
     return this.dataSource.transaction(async (manager) => {
       const results = manager.getRepository(MedicalResult);
       const result = await results
@@ -175,7 +179,19 @@ export class RecordsService {
       result.promptVersion = '2';
       result.schemaVersion = '2';
       result.requirements = [];
-      return results.save(result);
+      const saved = await results.save(result);
+      const activeRequirements = await this.requirements.find({ where: { active: true } });
+      const matchedFindings = (saved.extractedFindings ?? []).flatMap((finding, findingIndex) => {
+        const requirementIds = activeRequirements
+          .filter(
+            (requirement) =>
+              requirement.name === finding.testName &&
+              (requirement.patientApplicability === role || requirement.patientApplicability === 'both'),
+          )
+          .map((requirement) => requirement.id);
+        return requirementIds.length > 0 ? [{ ...finding, findingIndex, requirementIds }] : [];
+      });
+      return { ...saved, matchedFindings };
     });
   }
   async confirm(
