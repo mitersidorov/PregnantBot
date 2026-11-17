@@ -31,9 +31,9 @@ describe('RecordsController download', () => {
 });
 
 describe('RecordsController interpretation', () => {
-  it('passes the authenticated role so the proposal can include role-matched findings', async () => {
+  it('passes the authenticated uploader ID while matching checklist findings independently of role', async () => {
     const service = {
-      interpret: jest.fn(async (id: string, userId: number, role: 'wife' | 'husband') => {
+      interpret: jest.fn(async (id: string, userId: number, role: string) => {
         void id;
         void userId;
         void role;

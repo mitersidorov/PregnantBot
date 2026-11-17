@@ -13,7 +13,9 @@ describe('InterpretationService', () => {
       responses: {
         create: jest.fn<() => Promise<{ output_text: string }>>().mockResolvedValue({
           output_text: JSON.stringify({
-            findings: [{ testName: 'CBC', resultDate: '2026-01-20', summary: 'Normal', pageNumber: 1 }],
+            findings: [
+              { testName: 'CBC', resultDate: '2026-01-20', summary: 'Normal', pageNumber: 1, requirementIds: [] },
+            ],
             unexpected: true,
           }),
         }),
@@ -35,6 +37,7 @@ describe('InterpretationService', () => {
           resultDate: '2026-01-20',
           summary: 'Гемоглобин: 132 г/л; лейкоциты: 5,4 × 10⁹/л.',
           pageNumber: 1,
+          requirementIds: ['h-cbc'],
         },
       ],
     };
@@ -55,7 +58,9 @@ describe('InterpretationService', () => {
     };
 
     await expect(
-      service.proposeFile(Buffer.from('synthetic document'), 'result.pdf', 'application/pdf'),
+      service.proposeFile(Buffer.from('synthetic document'), 'result.pdf', 'application/pdf', [
+        { id: 'h-cbc', name: 'Complete blood count (CBC)' },
+      ]),
     ).resolves.toEqual(expectedOutput);
 
     expect(capturedRequest).toMatchObject({
@@ -63,18 +68,22 @@ describe('InterpretationService', () => {
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: EXTRACTION_INSTRUCTIONS },
+            { type: 'input_text', text: expect.stringContaining('h-cbc: Complete blood count (CBC)') },
             { type: 'input_file', file_id: 'provider-file', detail: 'high' },
           ],
         },
       ],
     });
     expect(EXTRACTION_INSTRUCTIONS).toContain('по-русски');
-    expect(EXTRACTION_INSTRUCTIONS).toContain('Complete blood count (CBC) → Общий анализ крови');
-    expect(EXTRACTION_INSTRUCTIONS).toContain('Для неизвестного названия дай точный и понятный перевод');
+    expect(EXTRACTION_INSTRUCTIONS).not.toContain('Complete blood count (CBC) → Общий анализ крови');
     expect(EXTRACTION_INSTRUCTIONS).toContain('Для неизвестного названия оставь исходные аббревиатуры');
     expect(EXTRACTION_INSTRUCTIONS).toContain('Не пересчитывай, не округляй, не конвертируй единицы');
     expect(EXTRACTION_INSTRUCTIONS).toContain('от первой до последней страницы');
+    const input = capturedRequest?.input as Array<{ content: Array<Record<string, unknown>> }>;
+    const prompt = input[0].content.find((part) => part.type === 'input_text')?.text as string;
+    expect(prompt).toContain('h-cbc: Complete blood count (CBC)');
+    expect(prompt).not.toContain('wife-urine');
+    expect(prompt).not.toContain('Urinalysis');
   });
 
   it('returns every distinct finding and projects the first finding into legacy fields', async () => {
@@ -85,8 +94,15 @@ describe('InterpretationService', () => {
           resultDate: '2026-01-20',
           summary: 'Гемоглобин: 132 г/л.',
           pageNumber: 1,
+          requirementIds: [],
         },
-        { testName: 'Urinalysis', resultDate: '2026-01-21', summary: 'Белок: отрицательно.', pageNumber: 2 },
+        {
+          testName: 'Urinalysis',
+          resultDate: '2026-01-21',
+          summary: 'Белок: отрицательно.',
+          pageNumber: 2,
+          requirementIds: [],
+        },
       ],
     };
     let capturedRequest: Record<string, unknown> | undefined;
@@ -111,9 +127,22 @@ describe('InterpretationService', () => {
       resultDate: '2026-01-20',
       summary: 'Гемоглобин: 132 г/л.',
       pageNumber: 1,
+      requirementIds: [],
       findings: [
-        { testName: 'Общий анализ крови', resultDate: '2026-01-20', summary: 'Гемоглобин: 132 г/л.', pageNumber: 1 },
-        { testName: 'Общий анализ мочи', resultDate: '2026-01-21', summary: 'Белок: отрицательно.', pageNumber: 2 },
+        {
+          testName: 'Общий анализ крови',
+          resultDate: '2026-01-20',
+          summary: 'Гемоглобин: 132 г/л.',
+          pageNumber: 1,
+          requirementIds: [],
+        },
+        {
+          testName: 'Общий анализ мочи',
+          resultDate: '2026-01-21',
+          summary: 'Белок: отрицательно.',
+          pageNumber: 2,
+          requirementIds: [],
+        },
       ],
     });
 
@@ -124,7 +153,7 @@ describe('InterpretationService', () => {
             properties: {
               findings: {
                 type: 'array',
-                items: { required: ['testName', 'resultDate', 'summary', 'pageNumber'] },
+                items: { required: ['testName', 'resultDate', 'summary', 'pageNumber', 'requirementIds'] },
               },
             },
             required: ['findings'],
