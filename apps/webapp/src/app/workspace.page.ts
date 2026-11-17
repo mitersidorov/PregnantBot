@@ -175,35 +175,33 @@ type RequirementOption = {
                           <p>{{ uploadProposal()?.summary }}</p>
                         }
                       }
-                      @if (uploadMatches().length) {
-                        <h3>Подходит к пунктам</h3>
-                        @if (uploadMatchGroups().length > 1) {
-                          @for (group of uploadMatchGroups(); track group.index) {
-                            @if (group.options.length) {
-                              <strong>{{ group.finding.testName || 'Анализ не распознан' }}</strong>
-                              @for (option of group.options; track option.id) {
-                                <label class="match-option">
-                                  <input
-                                    type="checkbox"
-                                    [checked]="selectedFor(uploadProposal()!.id).includes(option.id)"
-                                    (change)="toggleUploadMatch(option.id)"
-                                  />
-                                  {{ option.name }} · {{ applicabilityLabel(option.patientApplicability) }}
-                                </label>
-                              }
+                      @if (uploadMatchGroups().length) {
+                        <h3>Связать с пунктами чек-листа</h3>
+                        @for (group of uploadMatchGroups(); track group.index) {
+                          <fieldset class="finding-mapping">
+                            <legend>{{ group.finding.testName || 'Анализ не распознан' }}</legend>
+                            @if (!group.exactMatch) {
+                              <small
+                                >Точное совпадение не найдено — выберите подходящий пункт
+                                вручную.</small
+                              >
                             }
-                          }
-                        } @else {
-                          @for (option of uploadMatches(); track option.id) {
-                            <label class="match-option">
-                              <input
-                                type="checkbox"
-                                [checked]="selectedFor(uploadProposal()!.id).includes(option.id)"
-                                (change)="toggleUploadMatch(option.id)"
-                              />
-                              {{ option.name }} · {{ applicabilityLabel(option.patientApplicability) }}
-                            </label>
-                          }
+                            @for (option of group.options; track option.id) {
+                              <label class="match-option">
+                                <input
+                                  type="checkbox"
+                                  [checked]="
+                                    selectedForFinding(uploadProposal()!.id, group.index).includes(
+                                      option.id
+                                    )
+                                  "
+                                  (change)="toggleFindingMatch(group.index, option.id)"
+                                />
+                                {{ option.name }} ·
+                                {{ applicabilityLabel(option.patientApplicability) }}
+                              </label>
+                            }
+                          </fieldset>
                         }
                         @if (isUploadSpermogram()) {
                           <fieldset>
@@ -1225,6 +1223,7 @@ export class WorkspacePage implements OnInit {
   readonly activeCycle = signal<Cycle | undefined>(undefined);
   readonly requirementOptions = signal<RequirementOption[]>([]);
   readonly selectedRequirements = signal<Record<string, string[]>>({});
+  readonly selectedFindingRequirements = signal<Record<string, Record<number, string[]>>>({});
   readonly spermogramNormality = signal<Record<string, 'normal' | 'abnormal' | undefined>>({});
   readonly ownerFilter = signal<'mine' | 'partner'>('mine');
   readonly expandedRequirements = signal<Record<string, boolean>>({});
@@ -1842,17 +1841,21 @@ export class WorkspacePage implements OnInit {
           : file,
       ),
     );
-    const matches = this.matchesForProposal(proposal);
     const matchGroups = this.uploadMatchGroups();
-    const autoSelected =
-      matchGroups.length > 0 &&
-      matchGroups.every((group) => group.options.length <= 1) &&
-      matchGroups.some((group) => group.options.length === 1)
-        ? matchGroups.flatMap((group) => group.options.map((option) => option.id))
-        : [];
+    const selectedByFinding = Object.fromEntries(
+      matchGroups.map((group) => [
+        group.index,
+        group.exactMatch && group.options.length === 1 ? [group.options[0].id] : [],
+      ]),
+    );
+    const autoSelected = Object.values(selectedByFinding).flat();
+    this.selectedFindingRequirements.update((values) => ({
+      ...values,
+      [proposal.id]: selectedByFinding,
+    }));
     this.selectedRequirements.update((values) => ({
       ...values,
-      [proposal.id]: autoSelected.length ? [...new Set(autoSelected)] : matches.length === 1 ? [matches[0].id] : [],
+      [proposal.id]: [...new Set(autoSelected)],
     }));
     this.busy.set(false);
     this.uploadPhase.set('review');
@@ -1869,24 +1872,67 @@ export class WorkspacePage implements OnInit {
         (option.patientApplicability === role || option.patientApplicability === 'both'),
     );
   }
-  uploadMatchGroups(): { index: number; finding: ExtractedFinding; options: RequirementOption[] }[] {
+  uploadMatchGroups(): {
+    index: number;
+    finding: ExtractedFinding;
+    options: RequirementOption[];
+    exactMatch: boolean;
+  }[] {
     const result = this.uploadProposal();
     if (!result) return [];
     const findings = result.extractedFindings?.length
       ? result.extractedFindings
-      : [{ testName: result.testName ?? null, resultDate: result.resultDate ?? null, summary: result.summary ?? null, pageNumber: null }];
-    const seen = new Set<string>();
-    return findings.map((finding, index) => ({
-      index,
-      finding,
-      options: this.requirementOptions().filter((option) => {
-        const matches =
+      : [
+          {
+            testName: result.testName ?? null,
+            resultDate: result.resultDate ?? null,
+            summary: result.summary ?? null,
+            pageNumber: null,
+          },
+        ];
+    return findings.map((finding, index) => {
+      const exactOptions = this.requirementOptions().filter(
+        (option) =>
           option.name === this.displayTestName(finding.testName) &&
-          (option.patientApplicability === this.patientRole() || option.patientApplicability === 'both') &&
-          !seen.has(option.id);
-        if (matches) seen.add(option.id);
-        return matches;
-      }),
+          (option.patientApplicability === this.patientRole() ||
+            option.patientApplicability === 'both'),
+      );
+      const options = exactOptions.length
+        ? exactOptions
+        : this.requirementOptions().filter(
+            (option) =>
+              option.patientApplicability === this.patientRole() ||
+              option.patientApplicability === 'both',
+          );
+      return {
+        index,
+        finding,
+        options,
+        exactMatch: exactOptions.length > 0,
+      };
+    });
+  }
+  selectedForFinding(resultId: string, findingIndex: number): string[] {
+    return this.selectedFindingRequirements()[resultId]?.[findingIndex] ?? [];
+  }
+  toggleFindingMatch(findingIndex: number, requirementId: string): void {
+    const result = this.uploadProposal();
+    if (!result) return;
+    const selected = this.selectedForFinding(result.id, findingIndex);
+    const next = selected.includes(requirementId)
+      ? selected.filter((id) => id !== requirementId)
+      : [...selected, requirementId];
+    this.selectedFindingRequirements.update((values) => ({
+      ...values,
+      [result.id]: { ...values[result.id], [findingIndex]: next },
+    }));
+    const allSelected = Object.values({
+      ...this.selectedFindingRequirements()[result.id],
+      [findingIndex]: next,
+    }).flat();
+    this.selectedRequirements.update((values) => ({
+      ...values,
+      [result.id]: [...new Set(allSelected)],
     }));
   }
   uploadMatches() {
@@ -1925,16 +1971,20 @@ export class WorkspacePage implements OnInit {
     const result = this.uploadProposal();
     if (!result || !this.canConfirmUpload()) return;
     const selected = this.selectedFor(result.id);
-    const extractedFindings = (result.extractedFindings?.length
-      ? result.extractedFindings
-      : [{ testName: result.testName ?? null, resultDate: result.resultDate ?? null, summary: result.summary ?? null, pageNumber: null }]
-    ).map((finding) => ({
+    const extractedFindings = (
+      result.extractedFindings?.length
+        ? result.extractedFindings
+        : [
+            {
+              testName: result.testName ?? null,
+              resultDate: result.resultDate ?? null,
+              summary: result.summary ?? null,
+              pageNumber: null,
+            },
+          ]
+    ).map((finding, index) => ({
       ...finding,
-      requirementIds: selected.filter((id) =>
-        this.requirementOptions().some(
-          (option) => option.id === id && option.name === this.displayTestName(finding.testName),
-        ),
-      ),
+      requirementIds: this.selectedForFinding(result.id, index),
     }));
     this.busy.set(true);
     this.api
