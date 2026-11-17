@@ -72,8 +72,12 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
     const params = new URLSearchParams(raw);
     const entries = [...params.entries()];
     const hash = params.get('hash');
-    if (!hash || entries.length !== new Set(entries.map(([key]) => key)).size) {
-      logLoginFailure('malformed_init_data');
+    if (!hash) {
+      logLoginFailure('missing_hash');
+      throw this.unauthorized();
+    }
+    if (entries.length !== new Set(entries.map(([key]) => key)).size) {
+      logLoginFailure('duplicate_init_data_fields');
       throw this.unauthorized();
     }
 

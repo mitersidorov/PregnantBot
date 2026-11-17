@@ -1361,10 +1361,6 @@ export class WorkspacePage implements OnInit {
     if (typeof error !== 'object' || error === null || !('status' in error)) return false;
     return (error as { status?: unknown }).status === 401;
   }
-  private isForbidden(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('status' in error)) return false;
-    return (error as { status?: unknown }).status === 403;
-  }
   retryAuthorization() {
     window.location.reload();
   }
@@ -1475,14 +1471,7 @@ export class WorkspacePage implements OnInit {
         this.loadRequirementOptions();
         void this.router.navigateByUrl('/');
       },
-      error: (e) => {
-        this.busy.set(false);
-        if (this.isForbidden(e)) {
-          this.showToast('Начать подготовку может только аккаунт жены.', 'error');
-          return;
-        }
-        this.fail(e);
-      },
+      error: (e) => this.fail(e),
     });
   }
   resultsForRequirement(requirementId: string): { file: RecordFile; result: MedicalResult }[] {

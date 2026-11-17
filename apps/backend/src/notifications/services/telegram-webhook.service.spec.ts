@@ -26,6 +26,7 @@ describe('TelegramWebhookService', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -89,5 +90,21 @@ describe('TelegramWebhookService', () => {
       'https://app.example.test/api/webhooks/telegram',
       'synthetic_webhook_secret',
     );
+  });
+
+  it('keeps startup available when Telegram webhook registration times out', async () => {
+    jest.useFakeTimers();
+    const { service, telegram } = setup();
+    process.env.TELEGRAM_WEBHOOK_URL = 'https://app.example.test/api/webhooks/telegram';
+    telegram.setWebhook.mockRejectedValueOnce(new Error('ETIMEDOUT'));
+
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
+    expect(telegram.setWebhook).toHaveBeenCalledTimes(1);
+
+    telegram.setWebhook.mockResolvedValueOnce(undefined);
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(telegram.setWebhook).toHaveBeenCalledTimes(2);
+    service.onModuleDestroy();
+    jest.useRealTimers();
   });
 });
