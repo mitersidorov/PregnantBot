@@ -148,61 +148,48 @@ type RequirementOption = {
                     }
                     <section class="proposal-result">
                       <h2>Результат обработки</h2>
-                      @if ((uploadProposal()?.matchedFindings?.length ?? 0) > 1) {
-                        @for (
-                          finding of uploadProposal()!.matchedFindings;
-                          track finding.findingIndex
-                        ) {
-                          <article class="proposal-finding">
-                            <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
-                            @if (finding.resultDate) {
-                              <p>Дата сдачи: {{ finding.resultDate | date: 'dd.MM.yyyy' }}</p>
-                            }
-                            @if (finding.summary) {
-                              <p>{{ finding.summary }}</p>
-                            }
-                          </article>
-                        }
-                      } @else {
-                        @if (uploadProposal()?.matchedFindings?.[0]; as finding) {
-                          <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
-                          @if (finding.resultDate) {
-                            <p>Дата сдачи: {{ finding.resultDate | date: 'dd.MM.yyyy' }}</p>
-                          }
-                          @if (finding.summary) {
-                            <p>{{ finding.summary }}</p>
-                          }
-                        } @else {
-                          <p>Совпадение с чеклистом не найдено.</p>
-                        }
-                      }
                       @if (uploadMatchGroups().length) {
-                        <h3>Связать с пунктами чек-листа</h3>
                         @for (group of uploadMatchGroups(); track group.index) {
-                          <fieldset class="finding-mapping">
-                            <legend>{{ group.finding.testName || 'Анализ не распознан' }}</legend>
-                            @if (!group.exactMatch) {
-                              <small
-                                >Точное совпадение не найдено — выберите подходящий пункт
-                                вручную.</small
-                              >
-                            }
-                            @for (option of group.options; track option.id) {
-                              <label class="match-option">
-                                <input
-                                  type="checkbox"
-                                  [checked]="
-                                    selectedForFinding(uploadProposal()!.id, group.index).includes(
-                                      option.id
-                                    )
-                                  "
-                                  (change)="toggleFindingMatch(group.index, option.id)"
-                                />
-                                {{ option.name }} ·
-                                {{ applicabilityLabel(option.patientApplicability) }}
-                              </label>
-                            }
-                          </fieldset>
+                          <article class="proposal-finding">
+                            <div class="recognized-finding">
+                              <strong>{{ group.finding.testName || 'Анализ не распознан' }}</strong>
+                              <p class="finding-meta">
+                                @if (patientRole()) {
+                                  Для {{ analysisPatientLabel() }}
+                                }
+                                @if (group.finding.resultDate || uploadProposal()?.resultDate) {
+                                  · Дата:
+                                  {{
+                                    group.finding.resultDate || uploadProposal()?.resultDate
+                                      | date: 'dd.MM.yyyy'
+                                  }}
+                                } @else {
+                                  · Дата не указана
+                                }
+                                @if (group.finding.pageNumber) {
+                                  · Страница {{ group.finding.pageNumber }}
+                                }
+                              </p>
+                            </div>
+                            <div class="checklist-matches">
+                              <p class="matches-label">Пункты чек-листа</p>
+                              @for (option of group.options; track option.id) {
+                                <label class="match-option">
+                                  <input
+                                    type="checkbox"
+                                    [checked]="
+                                      selectedForFinding(
+                                        uploadProposal()!.id,
+                                        group.index
+                                      ).includes(option.id)
+                                    "
+                                    (change)="toggleFindingMatch(group.index, option.id)"
+                                  />
+                                  {{ uploadOptionLabel(group, option) }}
+                                </label>
+                              }
+                            </div>
+                          </article>
                         }
                         @if (isUploadSpermogram()) {
                           <fieldset>
@@ -226,7 +213,7 @@ type RequirementOption = {
                           </fieldset>
                         }
                       } @else {
-                        <p>Совпадение с чеклистом не найдено.</p>
+                        <p>Совпадений с вашим чек-листом не найдено.</p>
                       }
                     </section>
                     @if (uploadMatches().length) {
@@ -717,6 +704,35 @@ type RequirementOption = {
       }
       .proposal-finding + .proposal-finding {
         margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid #e7eee8;
+      }
+      .recognized-finding {
+        text-align: left;
+      }
+      .recognized-finding strong {
+        font-size: 16px;
+      }
+      .recognized-finding p {
+        margin-top: 4px;
+        color: #59655f;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      .recognized-finding .finding-meta {
+        margin-top: 6px;
+        color: #344b40;
+        font-weight: 600;
+      }
+      .checklist-matches {
+        margin-top: 10px;
+        text-align: left;
+      }
+      .matches-label {
+        margin: 0 0 2px;
+        color: #77827d;
+        font-size: 13px;
+        font-weight: 600;
       }
       .review-actions {
         display: flex;
@@ -803,6 +819,7 @@ type RequirementOption = {
         min-height: 44px;
         gap: 10px;
         padding: 6px 0;
+        text-align: left;
       }
       .cancel-link {
         display: block;
@@ -1864,7 +1881,7 @@ export class WorkspacePage implements OnInit {
     const selectedByFinding = Object.fromEntries(
       matchGroups.map((group) => [
         group.index,
-        group.exactMatch && group.options.length === 1 ? [group.options[0].id] : [],
+        group.options.length === 1 ? [group.options[0].id] : [],
       ]),
     );
     const autoSelected = Object.values(selectedByFinding).flat();
@@ -1895,7 +1912,6 @@ export class WorkspacePage implements OnInit {
     index: number;
     finding: ExtractedFinding;
     options: RequirementOption[];
-    exactMatch: boolean;
   }[] {
     const result = this.uploadProposal();
     if (!result) return [];
@@ -1912,9 +1928,25 @@ export class WorkspacePage implements OnInit {
         index: finding.findingIndex,
         finding,
         options,
-        exactMatch: options.length > 0,
       };
     });
+  }
+  uploadOptionLabel(
+    group: { finding: ExtractedFinding; options: RequirementOption[] },
+    option: RequirementOption,
+  ): string {
+    const sameNameCount = group.options.filter(
+      (candidate) => candidate.name === option.name,
+    ).length;
+    if (sameNameCount > 1)
+      return `${option.name} · ${this.applicabilityLabel(option.patientApplicability)}`;
+    return option.name;
+  }
+  analysisPatientLabel(): string {
+    const role = this.patientRole();
+    if (role === 'wife') return 'жены';
+    if (role === 'husband') return 'мужа';
+    return 'пациента';
   }
   selectedForFinding(resultId: string, findingIndex: number): string[] {
     return this.selectedFindingRequirements()[resultId]?.[findingIndex] ?? [];
