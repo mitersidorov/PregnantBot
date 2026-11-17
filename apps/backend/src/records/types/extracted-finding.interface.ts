@@ -5,3 +5,8 @@ export interface ExtractedFinding {
   pageNumber: number | null;
   requirementIds?: string[];
 }
+
+export interface ChecklistMatchedFinding extends ExtractedFinding {
+  findingIndex: number;
+  requirementIds: string[];
+}

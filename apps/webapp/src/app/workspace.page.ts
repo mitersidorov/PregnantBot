@@ -148,13 +148,13 @@ type RequirementOption = {
                     }
                     <section class="proposal-result">
                       <h2>Результат обработки</h2>
-                      @if ((uploadProposal()?.extractedFindings?.length ?? 0) > 1) {
-                        @for (finding of uploadProposal()!.extractedFindings; track $index) {
+                      @if ((uploadProposal()?.matchedFindings?.length ?? 0) > 1) {
+                        @for (
+                          finding of uploadProposal()!.matchedFindings;
+                          track finding.findingIndex
+                        ) {
                           <article class="proposal-finding">
                             <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
-                            @if (finding.pageNumber) {
-                              <p>Страница {{ finding.pageNumber }}</p>
-                            }
                             @if (finding.resultDate) {
                               <p>Дата сдачи: {{ finding.resultDate | date: 'dd.MM.yyyy' }}</p>
                             }
@@ -164,15 +164,16 @@ type RequirementOption = {
                           </article>
                         }
                       } @else {
-                        <strong>{{ uploadProposal()?.testName || 'Анализ не распознан' }}</strong>
-                        @if (uploadProposal()?.extractedFindings?.[0]?.pageNumber) {
-                          <p>Страница {{ uploadProposal()?.extractedFindings?.[0]?.pageNumber }}</p>
-                        }
-                        @if (uploadProposal()?.resultDate) {
-                          <p>Дата сдачи: {{ uploadProposal()?.resultDate | date: 'dd.MM.yyyy' }}</p>
-                        }
-                        @if (uploadProposal()?.summary) {
-                          <p>{{ uploadProposal()?.summary }}</p>
+                        @if (uploadProposal()?.matchedFindings?.[0]; as finding) {
+                          <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
+                          @if (finding.resultDate) {
+                            <p>Дата сдачи: {{ finding.resultDate | date: 'dd.MM.yyyy' }}</p>
+                          }
+                          @if (finding.summary) {
+                            <p>{{ finding.summary }}</p>
+                          }
+                        } @else {
+                          <p>Совпадение с чеклистом не найдено.</p>
                         }
                       }
                       @if (uploadMatchGroups().length) {
@@ -472,7 +473,23 @@ type RequirementOption = {
             } @else if (assignmentResult(); as result) {
               <section class="assignment-result">
                 <h3>Результат обработки</h3>
-                @if ((result.extractedFindings?.length ?? 0) > 1) {
+                @if (result.matchedFindings !== undefined) {
+                  @if (result.matchedFindings.length) {
+                    @for (finding of result.matchedFindings; track finding.findingIndex) {
+                      <article class="proposal-finding">
+                        <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
+                        @if (finding.resultDate) {
+                          <p>Дата сдачи: {{ finding.resultDate | date: 'dd.MM.yyyy' }}</p>
+                        }
+                        @if (finding.summary) {
+                          <p>{{ finding.summary }}</p>
+                        }
+                      </article>
+                    }
+                  } @else {
+                    <p>Совпадение с чеклистом не найдено.</p>
+                  }
+                } @else if ((result.extractedFindings?.length ?? 0) > 1) {
                   @for (finding of result.extractedFindings; track $index) {
                     <article class="proposal-finding">
                       <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
@@ -1861,9 +1878,9 @@ export class WorkspacePage implements OnInit {
     this.uploadPhase.set('review');
   }
   matchesForProposal(result: MedicalResult) {
-    const names = (result.extractedFindings?.length
-      ? result.extractedFindings.map((finding) => this.displayTestName(finding.testName))
-      : [this.displayTest(result)]);
+    const names = (result.matchedFindings ?? []).map((finding) =>
+      this.displayTestName(finding.testName),
+    );
     const role = this.patientRole();
     if (!role) return [];
     return this.requirementOptions().filter(
@@ -1880,17 +1897,7 @@ export class WorkspacePage implements OnInit {
   }[] {
     const result = this.uploadProposal();
     if (!result) return [];
-    const findings = result.extractedFindings?.length
-      ? result.extractedFindings
-      : [
-          {
-            testName: result.testName ?? null,
-            resultDate: result.resultDate ?? null,
-            summary: result.summary ?? null,
-            pageNumber: null,
-          },
-        ];
-    return findings.map((finding, index) => {
+    return (result.matchedFindings ?? []).map((finding) => {
       const exactOptions = this.requirementOptions().filter(
         (option) =>
           option.name === this.displayTestName(finding.testName) &&
@@ -1905,7 +1912,7 @@ export class WorkspacePage implements OnInit {
               option.patientApplicability === 'both',
           );
       return {
-        index,
+        index: finding.findingIndex,
         finding,
         options,
         exactMatch: exactOptions.length > 0,

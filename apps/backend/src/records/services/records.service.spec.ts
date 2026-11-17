@@ -433,6 +433,11 @@ describe('RecordsService uploads', () => {
       where: jest.fn().mockReturnThis(),
       getOne: jest.fn(async () => file),
     };
+    const findings = [
+      { testName: 'CBC', resultDate: '2026-11-15', summary: 'Updated', pageNumber: 1 },
+      { testName: 'Blood group', resultDate: '2026-11-14', summary: 'Other role', pageNumber: 4 },
+      { testName: 'Unknown', resultDate: '2026-11-13', summary: 'No checklist match', pageNumber: 9 },
+    ];
     const resultRepository = {
       createQueryBuilder: jest
         .fn()
@@ -456,22 +461,31 @@ describe('RecordsService uploads', () => {
         resultDate: '2026-11-15',
         summary: 'Updated',
         pageNumber: 1,
-        findings: [{ testName: 'CBC', resultDate: '2026-11-15', summary: 'Updated', pageNumber: 1 }],
+        findings,
       })),
       modelName: 'test-model',
     };
     const checklist = { resetActiveProgressForResult: jest.fn() };
+    const requirementRepository = {
+      find: jest.fn(async (options: { where: { active: boolean } }) => {
+        void options;
+        return [
+          { id: 'cbc-requirement', name: 'CBC', patientApplicability: 'wife', active: true },
+          { id: 'blood-group-requirement', name: 'Blood group', patientApplicability: 'husband', active: true },
+        ];
+      }),
+    };
     const service = new RecordsService(
       {} as never,
       {} as never,
-      {} as never,
+      requirementRepository as never,
       storage as never,
       interpretation as never,
       dataSource as never,
       checklist as never,
     );
 
-    const interpreted = await service.interpret('result-1', 101);
+    const interpreted = await service.interpret('result-1', 101, 'wife');
 
     expect(interpreted).toMatchObject({
       id: 'result-1',
@@ -481,8 +495,16 @@ describe('RecordsService uploads', () => {
       resultDate: '2026-11-15',
       supersededBy: null,
       requirements: [],
-      extractedFindings: [{ testName: 'CBC', resultDate: '2026-11-15', summary: 'Updated', pageNumber: 1 }],
+      extractedFindings: findings,
+      matchedFindings: [
+        {
+          ...findings[0],
+          findingIndex: 0,
+          requirementIds: ['cbc-requirement'],
+        },
+      ],
     });
+    expect(requirementRepository.find).toHaveBeenCalledWith({ where: { active: true } });
     expect(resultRepository.save).toHaveBeenCalledTimes(1);
     expect(interpretation.proposeFile).toHaveBeenCalledTimes(1);
     expect(checklist.resetActiveProgressForResult).not.toHaveBeenCalled();
@@ -512,7 +534,7 @@ describe('RecordsService uploads', () => {
       {} as never,
     );
 
-    await expect(service.interpret('result-1', 101)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.interpret('result-1', 101, 'wife')).rejects.toBeInstanceOf(ConflictException);
     expect(interpretation.proposeFile).not.toHaveBeenCalled();
   });
 
@@ -568,7 +590,7 @@ describe('RecordsService uploads', () => {
       {} as never,
     );
 
-    await expect(service.interpret('result-1', 101)).rejects.toThrow('OpenAI unavailable');
+    await expect(service.interpret('result-1', 101, 'wife')).rejects.toThrow('OpenAI unavailable');
     expect(pending.interpretationStatus).toBe('pending');
     expect(resultRepository.save).not.toHaveBeenCalled();
     expect(storage.downloadFile).toHaveBeenCalledWith('medical/file-1');
@@ -598,7 +620,7 @@ describe('RecordsService uploads', () => {
       {} as never,
     );
 
-    await expect(service.interpret('result-old', 101)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.interpret('result-old', 101, 'wife')).rejects.toBeInstanceOf(ConflictException);
     expect(interpretation.proposeFile).not.toHaveBeenCalled();
   });
 
@@ -637,7 +659,7 @@ describe('RecordsService uploads', () => {
       {} as never,
     );
 
-    await expect(service.interpret('result-1', 101)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.interpret('result-1', 101, 'wife')).rejects.toBeInstanceOf(ForbiddenException);
     expect(interpretation.proposeFile).not.toHaveBeenCalled();
   });
 });
