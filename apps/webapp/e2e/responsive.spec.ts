@@ -32,6 +32,16 @@ test.describe('responsive Telegram screens and workflows', () => {
         resultDate: '2026-11-15',
         summary: 'Synthetic result',
         interpretationStatus: 'proposed',
+        matchedFindings: [
+          {
+            testName: 'Биохимический анализ крови (АЛТ)',
+            resultDate: '2026-11-15',
+            summary: 'Synthetic result',
+            pageNumber: 1,
+            findingIndex: 0,
+            requirementIds: [requirementId],
+          },
+        ],
       };
       await page.route('**/api/**', async (route) => {
         const req = route.request();

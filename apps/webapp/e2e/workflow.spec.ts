@@ -24,6 +24,14 @@ test('start preparation, interpret a pending upload once, confirm it and browse 
         testName?: string;
         resultDate?: string;
         summary?: string;
+        matchedFindings?: {
+          testName: string;
+          resultDate: string;
+          summary: string;
+          pageNumber: number;
+          findingIndex: number;
+          requirementIds: string[];
+        }[];
         requirements?: { id: string }[];
         normality?: 'normal' | 'abnormal';
       }
@@ -138,6 +146,16 @@ test('start preparation, interpret a pending upload once, confirm it and browse 
         testName: 'Spermogram',
         resultDate: '2026-11-10',
         summary: 'Synthetic result',
+        matchedFindings: [
+          {
+            testName: 'Спермограмма (2-4 дня воздержания)',
+            resultDate: '2026-11-10',
+            summary: 'Synthetic result',
+            pageNumber: 1,
+            findingIndex: 0,
+            requirementIds: [spermogramId],
+          },
+        ],
         interpretationStatus: 'proposed',
       };
       return route.fulfill({ status: 201, json: proposal });
@@ -195,7 +213,10 @@ test('start preparation, interpret a pending upload once, confirm it and browse 
   releaseInterpret();
   await expect(page.locator('.upload-review')).toBeVisible();
   await expect(
-    page.locator('.proposal-result').getByText('Spermogram', { exact: true }).first(),
+    page
+      .locator('.proposal-result')
+      .getByText('Спермограмма (2-4 дня воздержания)', { exact: true })
+      .first(),
   ).toBeVisible();
   expect(interpretCalls).toBe(1);
   await page.getByLabel('Норма', { exact: true }).check();
@@ -270,6 +291,16 @@ test('does not interpret an upload that already contains an OpenAI proposal', as
             testName: 'Биохимический анализ крови (АЛТ)',
             resultDate: '2026-11-15',
             summary: 'Already interpreted',
+            matchedFindings: [
+              {
+                testName: 'Биохимический анализ крови (АЛТ)',
+                resultDate: '2026-11-15',
+                summary: 'Already interpreted',
+                pageNumber: 1,
+                findingIndex: 0,
+                requirementIds: [requirementId],
+              },
+            ],
             interpretationStatus: 'proposed',
           },
         },
@@ -537,6 +568,16 @@ for (const role of ['wife', 'husband'] as const) {
               testName: uploadRequirement.name,
               resultDate: '2026-11-15',
               summary: 'Role-specific proposal',
+              matchedFindings: [
+                {
+                  testName: uploadRequirement.name,
+                  resultDate: '2026-11-15',
+                  summary: 'Role-specific proposal',
+                  pageNumber: 1,
+                  findingIndex: 0,
+                  requirementIds: [uploadRequirement.id],
+                },
+              ],
               interpretationStatus: 'proposed',
             },
           },

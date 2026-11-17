@@ -128,6 +128,16 @@ test('renders the API checklist by role and preserves IDs in assignment confirma
           resultDate: '2026-11-14',
           summary: 'Synthetic OpenAI interpretation',
           interpretationStatus: 'proposed',
+          matchedFindings: [
+            {
+              testName: names[11],
+              resultDate: '2026-11-14',
+              summary: 'Synthetic OpenAI interpretation',
+              pageNumber: 1,
+              findingIndex: 0,
+              requirementIds: [id(12)],
+            },
+          ],
         },
       });
     }
@@ -180,7 +190,7 @@ test('renders the API checklist by role and preserves IDs in assignment confirma
   await expect(assignment.locator('.assignment-result')).toContainText(
     'Synthetic OpenAI interpretation',
   );
-  await expect(assignment.locator('.assignment-result')).toContainText('ALT');
+  await expect(assignment.locator('.assignment-result')).toContainText(names[11]);
   await expect(assignment.locator('.assignment-result')).toContainText('14.11.2026');
   expect(confirmCalls).toBe(0);
   await assignment.getByRole('button', { name: /Биохимический анализ крови \(АЛТ\)/ }).click();
