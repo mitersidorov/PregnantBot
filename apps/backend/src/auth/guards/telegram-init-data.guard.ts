@@ -51,7 +51,8 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
       return true;
     }
     if (this.allowConfiguredLocalTestUser(request)) return true;
-    const isLoginAttempt = request.path === '/auth/me' || request.path.endsWith('/auth/me');
+    const pathname = typeof request.path === 'string' ? request.path : '';
+    const isLoginAttempt = pathname === '/auth/me' || pathname.endsWith('/auth/me');
     const logLoginFailure = (reason: string, userId?: number) => {
       if (isLoginAttempt)
         this.logger.warn(`Telegram login attempt denied reason=${reason}${userId ? ` userId=${userId}` : ''}`);
