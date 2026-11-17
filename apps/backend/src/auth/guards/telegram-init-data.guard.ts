@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Request } from 'express';
@@ -32,6 +32,7 @@ export function configuredTelegramRoles(): Map<number, PatientRole> {
 // Verifies Telegram Web App initData signatures, freshness, and the configured account allowlist.
 @Injectable()
 export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
+  private readonly logger = new Logger(TelegramInitDataGuard.name);
   constructor(private readonly reflector: Reflector) {}
 
   onModuleInit(): void {
@@ -50,16 +51,30 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
       return true;
     }
     if (this.allowConfiguredLocalTestUser(request)) return true;
+    const isLoginAttempt = request.path === '/auth/me' || request.path.endsWith('/auth/me');
+    const logLoginFailure = (reason: string, userId?: number) => {
+      if (isLoginAttempt)
+        this.logger.warn(`Telegram login attempt denied reason=${reason}${userId ? ` userId=${userId}` : ''}`);
+    };
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const allowedIds = this.getAllowedIds();
-    if (!botToken || !allowedIds) throw this.unauthorized();
+    if (!botToken || !allowedIds) {
+      logLoginFailure('server_configuration');
+      throw this.unauthorized();
+    }
 
     const raw = request.headers['x-telegram-init-data'];
-    if (typeof raw !== 'string' || !raw) throw this.unauthorized();
+    if (typeof raw !== 'string' || !raw) {
+      logLoginFailure('missing_init_data');
+      throw this.unauthorized();
+    }
     const params = new URLSearchParams(raw);
     const entries = [...params.entries()];
     const hash = params.get('hash');
-    if (!hash || entries.length !== new Set(entries.map(([key]) => key)).size) throw this.unauthorized();
+    if (!hash || entries.length !== new Set(entries.map(([key]) => key)).size) {
+      logLoginFailure('malformed_init_data');
+      throw this.unauthorized();
+    }
 
     const dataCheckString = entries
       .filter(([key]) => key !== 'hash')
@@ -69,7 +84,10 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
     const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
     const expected = createHmac('sha256', secret).update(dataCheckString).digest();
     const provided = /^[a-f0-9]{64}$/i.test(hash) ? Buffer.from(hash, 'hex') : Buffer.alloc(0);
-    if (provided.length !== expected.length || !timingSafeEqual(expected, provided)) throw this.unauthorized();
+    if (provided.length !== expected.length || !timingSafeEqual(expected, provided)) {
+      logLoginFailure('invalid_signature');
+      throw this.unauthorized();
+    }
 
     const authDate = Number(params.get('auth_date'));
     const maxAge = Number(process.env.TELEGRAM_INIT_DATA_MAX_AGE_SECONDS ?? 86400);
@@ -81,6 +99,7 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
       authDate > now + 30 ||
       now - authDate > maxAge
     ) {
+      logLoginFailure('expired_init_data');
       throw this.unauthorized();
     }
 
@@ -88,14 +107,22 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
     try {
       user = JSON.parse(params.get('user') ?? '') as TelegramUser;
     } catch {
+      logLoginFailure('invalid_user_payload');
       throw this.unauthorized();
     }
-    if (!Number.isSafeInteger(user?.id) || !allowedIds.has(user.id)) throw this.unauthorized();
+    if (!Number.isSafeInteger(user?.id) || !allowedIds.has(user.id)) {
+      logLoginFailure('telegram_id_not_allowed', Number.isSafeInteger(user?.id) ? user.id : undefined);
+      throw this.unauthorized();
+    }
     request.telegramUser = user;
     const roles = this.getRoles();
     const role = roles.get(user.id);
-    if (!role) throw this.unauthorized();
+    if (!role) {
+      logLoginFailure('telegram_role_missing', user.id);
+      throw this.unauthorized();
+    }
     request.patientRole = role;
+    if (isLoginAttempt) this.logger.log(`Telegram login succeeded userId=${user.id} role=${role}`);
     return true;
   }
 

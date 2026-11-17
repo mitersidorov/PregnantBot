@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import { configuredTelegramRoles } from '../../auth/guards/telegram-init-data.guard';
 import { TelegramNotificationService } from './telegram-notification.service';
@@ -13,6 +13,7 @@ interface TelegramUpdate {
 
 @Injectable()
 export class TelegramWebhookService implements OnModuleInit {
+  private readonly logger = new Logger(TelegramWebhookService.name);
   constructor(private readonly telegram: TelegramNotificationService) {}
 
   async onModuleInit(): Promise<void> {
@@ -42,9 +43,20 @@ export class TelegramWebhookService implements OnModuleInit {
     }
 
     const roles = configuredTelegramRoles();
-    const role = roles.get(message.from!.id!);
+    const userId = message.from!.id!;
+    const role = roles.get(userId);
+    this.logger.log(`Telegram /start received userId=${userId} allowed=${Boolean(role)}${role ? ` role=${role}` : ''}`);
     const reply = role ? 'Доступ подтверждён. Откройте веб-приложение из меню бота.' : 'Простите, у вас нет доступа.';
-    await this.telegram.sendMessage(String(message.chat!.id), reply);
+    try {
+      await this.telegram.sendMessage(String(message.chat!.id), reply);
+      this.logger.log(`Telegram /start reply sent userId=${userId}`);
+    } catch (error) {
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
+      this.logger.error(`Telegram /start reply failed userId=${userId} error=${errorName}`);
+      // Keep the webhook request failed so Telegram can retry this update after a transient
+      // outbound API/network failure. HttpService records the sanitized transport cause.
+      throw error;
+    }
     return { ok: true };
   }
 

@@ -475,7 +475,9 @@ const ALIASES: Record<string, string> = {
         </div>
       }
     } @else {
-      <p class="access-state" role="status">{{ accessMessage() }}</p>
+      <div class="access-state">
+        <button type="button" (click)="retryAuthorization()">Повторить</button>
+      </div>
     }
     @if (error() || message()) {
       <div
@@ -1150,7 +1152,6 @@ export class WorkspacePage implements OnInit {
   readonly api = this.apiService;
   readonly section = signal('overview');
   readonly authStatus = signal<'checking' | 'authorized' | 'denied'>('checking');
-  readonly accessMessage = signal('Проверка доступа…');
   readonly cycles = signal<Cycle[]>([]);
   readonly records = signal<RecordFile[]>([]);
   readonly patientRole = signal<PatientRole | undefined>(undefined);
@@ -1204,15 +1205,11 @@ export class WorkspacePage implements OnInit {
           this.authStatus.set('authorized');
           this.loadCurrentRouteData();
         } else {
-          this.denyIdentity('Нет доступа к приложению.');
+          this.denyIdentity();
         }
       },
       error: (error) =>
-        this.denyIdentity(
-          this.isAuthorizationFailure(error)
-            ? 'Нет доступа к приложению.'
-            : 'Не удалось проверить доступ. Обновите страницу.',
-        ),
+        this.denyIdentity(),
     });
     this.route.data.subscribe((d) => {
       this.section.set(String(d['section'] ?? 'overview'));
@@ -1238,9 +1235,8 @@ export class WorkspacePage implements OnInit {
       if (id) this.loadRecords(id);
     }
   }
-  private denyIdentity(message: string): void {
+  private denyIdentity(): void {
     this.authStatus.set('denied');
-    this.accessMessage.set(message);
     this.patientRole.set(undefined);
     this.telegram.clearAuthenticatedUserId();
     this.navigationState.setAuthenticated(false);
@@ -1351,8 +1347,8 @@ export class WorkspacePage implements OnInit {
   }
   private fail(e: unknown) {
     this.busy.set(false);
-    if (this.isAuthorizationFailure(e)) {
-      this.denyIdentity('Доступ не разрешён. Проверьте аккаунт Telegram.');
+    if (this.isAuthenticationFailure(e)) {
+      this.denyIdentity();
       return;
     }
     const text =
@@ -1361,10 +1357,16 @@ export class WorkspacePage implements OnInit {
         : 'Не удалось выполнить запрос. Попробуйте ещё раз.';
     this.showToast(text, 'error');
   }
-  private isAuthorizationFailure(error: unknown): boolean {
+  private isAuthenticationFailure(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('status' in error)) return false;
-    const status = (error as { status?: unknown }).status;
-    return status === 401 || status === 403;
+    return (error as { status?: unknown }).status === 401;
+  }
+  private isForbidden(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('status' in error)) return false;
+    return (error as { status?: unknown }).status === 403;
+  }
+  retryAuthorization() {
+    window.location.reload();
   }
   private translateError(s: string): string {
     const m = s.match(/status\s+(\d{3})/i);
@@ -1373,8 +1375,7 @@ export class WorkspacePage implements OnInit {
       return 'Нет соединения с сервером. Проверьте подключение и попробуйте ещё раз.';
     if (status === '400')
       return 'Не удалось обработать запрос. Проверьте данные и попробуйте ещё раз.';
-    if (status === '401' || status === '403')
-      return 'Доступ не разрешён. Проверьте аккаунт Telegram.';
+    if (status === '401' || status === '403') return 'Операция недоступна для этого аккаунта.';
     if (status === '404') return 'Запрошенные данные не найдены.';
     if (status === '409') return 'Изменения конфликтуют с текущими данными. Обновите страницу.';
     if (status === '413') return 'Файл слишком большой.';
@@ -1474,7 +1475,14 @@ export class WorkspacePage implements OnInit {
         this.loadRequirementOptions();
         void this.router.navigateByUrl('/');
       },
-      error: (e) => this.fail(e),
+      error: (e) => {
+        this.busy.set(false);
+        if (this.isForbidden(e)) {
+          this.showToast('Начать подготовку может только аккаунт жены.', 'error');
+          return;
+        }
+        this.fail(e);
+      },
     });
   }
   resultsForRequirement(requirementId: string): { file: RecordFile; result: MedicalResult }[] {
