@@ -8,6 +8,7 @@ import {
   Cycle,
   RecordFile,
   MedicalResult,
+  ExtractedFinding,
   ChecklistItem,
   PatientRole,
 } from './core/pregnantbot-api.service';
@@ -105,6 +106,15 @@ const ALIASES: Record<string, string> = {
   'C. trachomatis PCR': 'ПЦР (моча или эякулят) на Chlamydia trach.',
   'Andrologist conclusion': 'Заключение андролога',
 };
+type RequirementOption = {
+  id: string;
+  name: string;
+  status: string;
+  resultId: string | null;
+  patientApplicability: 'wife' | 'husband' | 'both';
+  validityDays: number | null;
+  branchMetadata: Record<string, unknown> | null;
+};
 @Component({
   selector: 'app-workspace-page',
   imports: [RouterLink, DatePipe],
@@ -138,25 +148,62 @@ const ALIASES: Record<string, string> = {
                     }
                     <section class="proposal-result">
                       <h2>Результат обработки</h2>
-                      <strong>{{ uploadProposal()?.testName || 'Анализ не распознан' }}</strong>
-                      @if (uploadProposal()?.resultDate) {
-                        <p>Дата сдачи: {{ uploadProposal()?.resultDate | date: 'dd.MM.yyyy' }}</p>
-                      }
-                      @if (uploadProposal()?.summary) {
-                        <p>{{ uploadProposal()?.summary }}</p>
+                      @if ((uploadProposal()?.extractedFindings?.length ?? 0) > 1) {
+                        @for (finding of uploadProposal()!.extractedFindings; track $index) {
+                          <article class="proposal-finding">
+                            <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
+                            @if (finding.pageNumber) {
+                              <p>Страница {{ finding.pageNumber }}</p>
+                            }
+                            @if (finding.resultDate) {
+                              <p>Дата сдачи: {{ finding.resultDate | date: 'dd.MM.yyyy' }}</p>
+                            }
+                            @if (finding.summary) {
+                              <p>{{ finding.summary }}</p>
+                            }
+                          </article>
+                        }
+                      } @else {
+                        <strong>{{ uploadProposal()?.testName || 'Анализ не распознан' }}</strong>
+                        @if (uploadProposal()?.extractedFindings?.[0]?.pageNumber) {
+                          <p>Страница {{ uploadProposal()?.extractedFindings?.[0]?.pageNumber }}</p>
+                        }
+                        @if (uploadProposal()?.resultDate) {
+                          <p>Дата сдачи: {{ uploadProposal()?.resultDate | date: 'dd.MM.yyyy' }}</p>
+                        }
+                        @if (uploadProposal()?.summary) {
+                          <p>{{ uploadProposal()?.summary }}</p>
+                        }
                       }
                       @if (uploadMatches().length) {
                         <h3>Подходит к пунктам</h3>
-                        @for (option of uploadMatches(); track option.id) {
-                          <label class="match-option">
-                            <input
-                              type="checkbox"
-                              [checked]="selectedFor(uploadProposal()!.id).includes(option.id)"
-                              (change)="toggleUploadMatch(option.id)"
-                            />
-                            {{ option.name }} ·
-                            {{ applicabilityLabel(option.patientApplicability) }}
-                          </label>
+                        @if (uploadMatchGroups().length > 1) {
+                          @for (group of uploadMatchGroups(); track group.index) {
+                            @if (group.options.length) {
+                              <strong>{{ group.finding.testName || 'Анализ не распознан' }}</strong>
+                              @for (option of group.options; track option.id) {
+                                <label class="match-option">
+                                  <input
+                                    type="checkbox"
+                                    [checked]="selectedFor(uploadProposal()!.id).includes(option.id)"
+                                    (change)="toggleUploadMatch(option.id)"
+                                  />
+                                  {{ option.name }} · {{ applicabilityLabel(option.patientApplicability) }}
+                                </label>
+                              }
+                            }
+                          }
+                        } @else {
+                          @for (option of uploadMatches(); track option.id) {
+                            <label class="match-option">
+                              <input
+                                type="checkbox"
+                                [checked]="selectedFor(uploadProposal()!.id).includes(option.id)"
+                                (change)="toggleUploadMatch(option.id)"
+                              />
+                              {{ option.name }} · {{ applicabilityLabel(option.patientApplicability) }}
+                            </label>
+                          }
                         }
                         @if (isUploadSpermogram()) {
                           <fieldset>
@@ -329,7 +376,7 @@ const ALIASES: Record<string, string> = {
                     >
                     <small>
                       Сдан
-                      {{ entry.result.resultDate || entry.file.uploadedAt | date: 'dd.MM.yyyy' }} ·
+                      {{ resultDateForRequirement(entry.result, item.id) || entry.file.uploadedAt | date: 'dd.MM.yyyy' }} ·
                       {{ ownerLabel(entry.file) }} ·
                       @if (validUntil(entry.result, item.id); as expiry) {
                         годен до {{ expiry | date: 'dd.MM.yyyy' }}
@@ -427,12 +474,29 @@ const ALIASES: Record<string, string> = {
             } @else if (assignmentResult(); as result) {
               <section class="assignment-result">
                 <h3>Результат обработки</h3>
-                <strong>{{ result.testName || 'Анализ не распознан' }}</strong>
-                @if (result.resultDate) {
-                  <p>Дата сдачи: {{ result.resultDate | date: 'dd.MM.yyyy' }}</p>
-                }
-                @if (result.summary) {
-                  <p>{{ result.summary }}</p>
+                @if ((result.extractedFindings?.length ?? 0) > 1) {
+                  @for (finding of result.extractedFindings; track $index) {
+                    <article class="proposal-finding">
+                      <strong>{{ finding.testName || 'Анализ не распознан' }}</strong>
+                      @if (finding.pageNumber) {
+                        <p>Страница {{ finding.pageNumber }}</p>
+                      }
+                      @if (finding.resultDate) {
+                        <p>Дата сдачи: {{ finding.resultDate | date: 'dd.MM.yyyy' }}</p>
+                      }
+                      @if (finding.summary) {
+                        <p>{{ finding.summary }}</p>
+                      }
+                    </article>
+                  }
+                } @else {
+                  <strong>{{ result.testName || 'Анализ не распознан' }}</strong>
+                  @if (result.resultDate) {
+                    <p>Дата сдачи: {{ result.resultDate | date: 'dd.MM.yyyy' }}</p>
+                  }
+                  @if (result.summary) {
+                    <p>{{ result.summary }}</p>
+                  }
                 }
               </section>
               <h3>Выберите обследование</h3>
@@ -632,6 +696,9 @@ const ALIASES: Record<string, string> = {
       }
       .proposal-result p {
         margin-bottom: 0;
+      }
+      .proposal-finding + .proposal-finding {
+        margin-top: 14px;
       }
       .review-actions {
         display: flex;
@@ -1156,17 +1223,7 @@ export class WorkspacePage implements OnInit {
   readonly records = signal<RecordFile[]>([]);
   readonly patientRole = signal<PatientRole | undefined>(undefined);
   readonly activeCycle = signal<Cycle | undefined>(undefined);
-  readonly requirementOptions = signal<
-    Array<{
-      id: string;
-      name: string;
-      status: string;
-      resultId: string | null;
-      patientApplicability: 'wife' | 'husband' | 'both';
-      validityDays: number | null;
-      branchMetadata: Record<string, unknown> | null;
-    }>
-  >([]);
+  readonly requirementOptions = signal<RequirementOption[]>([]);
   readonly selectedRequirements = signal<Record<string, string[]>>({});
   readonly spermogramNormality = signal<Record<string, 'normal' | 'abnormal' | undefined>>({});
   readonly ownerFilter = signal<'mine' | 'partner'>('mine');
@@ -1262,7 +1319,10 @@ export class WorkspacePage implements OnInit {
     );
   }
   displayTest(result: MedicalResult): string {
-    return ALIASES[result.testName ?? ''] ?? result.testName ?? 'Нераспознанный результат';
+    return this.displayTestName(result.testName);
+  }
+  private displayTestName(testName: string | null | undefined): string {
+    return ALIASES[testName ?? ''] ?? testName ?? 'Нераспознанный результат';
   }
   statusLabel(status: string): string {
     return (
@@ -1661,16 +1721,28 @@ export class WorkspacePage implements OnInit {
   }
   validUntil(result: MedicalResult, requirementId: string): Date | null {
     const option = this.requirementOptions().find((item) => item.id === requirementId);
-    if (!option || option.validityDays === null || !result.resultDate) return null;
+    const resultDate = this.resultDateForRequirement(result, requirementId);
+    if (!option || option.validityDays === null || !resultDate) return null;
     if (
       option.branchMetadata?.['validityAppliesOnlyIfNoAbnormalities'] === true &&
       result.normality !== 'normal'
     ) {
       return null;
     }
-    const match = result.resultDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const match = resultDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!match) return null;
     return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + option.validityDays);
+  }
+  resultDateForRequirement(result: MedicalResult, requirementId: string): string | undefined {
+    const linkedFindings = (result.extractedFindings ?? []).filter((finding) =>
+      finding.requirementIds?.includes(requirementId),
+    );
+    if (linkedFindings.length === 0) return result.resultDate;
+    const dates = linkedFindings
+      .filter((finding) => finding.resultDate)
+      .map((finding) => finding.resultDate as string)
+      .sort((a, b) => b.localeCompare(a));
+    return dates[0];
   }
   validityNote(result: MedicalResult, requirementId: string): string {
     const option = this.requirementOptions().find((item) => item.id === requirementId);
@@ -1771,22 +1843,51 @@ export class WorkspacePage implements OnInit {
       ),
     );
     const matches = this.matchesForProposal(proposal);
+    const matchGroups = this.uploadMatchGroups();
+    const autoSelected =
+      matchGroups.length > 0 &&
+      matchGroups.every((group) => group.options.length <= 1) &&
+      matchGroups.some((group) => group.options.length === 1)
+        ? matchGroups.flatMap((group) => group.options.map((option) => option.id))
+        : [];
     this.selectedRequirements.update((values) => ({
       ...values,
-      [proposal.id]: matches.length === 1 ? [matches[0].id] : [],
+      [proposal.id]: autoSelected.length ? [...new Set(autoSelected)] : matches.length === 1 ? [matches[0].id] : [],
     }));
     this.busy.set(false);
     this.uploadPhase.set('review');
   }
   matchesForProposal(result: MedicalResult) {
-    const name = this.displayTest(result);
+    const names = (result.extractedFindings?.length
+      ? result.extractedFindings.map((finding) => this.displayTestName(finding.testName))
+      : [this.displayTest(result)]);
     const role = this.patientRole();
     if (!role) return [];
     return this.requirementOptions().filter(
       (option) =>
-        option.name === name &&
+        names.includes(option.name) &&
         (option.patientApplicability === role || option.patientApplicability === 'both'),
     );
+  }
+  uploadMatchGroups(): { index: number; finding: ExtractedFinding; options: RequirementOption[] }[] {
+    const result = this.uploadProposal();
+    if (!result) return [];
+    const findings = result.extractedFindings?.length
+      ? result.extractedFindings
+      : [{ testName: result.testName ?? null, resultDate: result.resultDate ?? null, summary: result.summary ?? null, pageNumber: null }];
+    const seen = new Set<string>();
+    return findings.map((finding, index) => ({
+      index,
+      finding,
+      options: this.requirementOptions().filter((option) => {
+        const matches =
+          option.name === this.displayTestName(finding.testName) &&
+          (option.patientApplicability === this.patientRole() || option.patientApplicability === 'both') &&
+          !seen.has(option.id);
+        if (matches) seen.add(option.id);
+        return matches;
+      }),
+    }));
   }
   uploadMatches() {
     const result = this.uploadProposal();
@@ -1824,6 +1925,17 @@ export class WorkspacePage implements OnInit {
     const result = this.uploadProposal();
     if (!result || !this.canConfirmUpload()) return;
     const selected = this.selectedFor(result.id);
+    const extractedFindings = (result.extractedFindings?.length
+      ? result.extractedFindings
+      : [{ testName: result.testName ?? null, resultDate: result.resultDate ?? null, summary: result.summary ?? null, pageNumber: null }]
+    ).map((finding) => ({
+      ...finding,
+      requirementIds: selected.filter((id) =>
+        this.requirementOptions().some(
+          (option) => option.id === id && option.name === this.displayTestName(finding.testName),
+        ),
+      ),
+    }));
     this.busy.set(true);
     this.api
       .confirm(
@@ -1831,6 +1943,7 @@ export class WorkspacePage implements OnInit {
         result,
         selected,
         selected.includes(ID(38)) ? this.spermogramNormality()[result.id] : undefined,
+        extractedFindings,
       )
       .subscribe({
         next: () => {

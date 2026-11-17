@@ -45,7 +45,8 @@ export class NotificationSchedulerService {
           .filter((item) => !isOnlyIfIndicated(item.requirement.branchMetadata))
           .filter(
             (item) =>
-              item.status !== 'complete' || !isValidThrough(item.result, item.requirement.validityDays, weekEnd),
+              item.status !== 'complete' ||
+              !isValidThrough(item.result, item.requirementId, item.requirement.validityDays, weekEnd),
           )
           .filter((item) => {
             const dueDate = dueDateFor(cycle.startDate, item.requirement);
@@ -97,16 +98,17 @@ export class NotificationSchedulerService {
     });
 
     for (const result of results) {
-      if (!result.resultDate) continue;
       for (const requirement of result.requirements ?? []) {
         if (requirement.validityDays == null || requirement.validityDays <= 0) continue;
+        const resultDate = resultDateForRequirement(result, requirement.id);
+        if (!resultDate) continue;
         if (
           requirement.branchMetadata?.validityAppliesOnlyIfNoAbnormalities === true &&
           result.normality !== 'normal'
         ) {
           continue;
         }
-        const expiresOn = addDays(result.resultDate, requirement.validityDays);
+        const expiresOn = addDays(resultDate, requirement.validityDays);
         const remainingDays = dayDifference(today, expiresOn);
         if (remainingDays < 1 || remainingDays > EXPIRY_NOTICE_DAYS) continue;
 
@@ -119,8 +121,9 @@ export class NotificationSchedulerService {
         for (const role of roles) {
           const recipientId = recipients[role];
           if (!recipientId) continue;
-          const testName = result.testName || requirement.name;
-          const message = `Через ${remainingDays} дн. истекает срок действия результата «${testName}». Дата результата: ${result.resultDate}; срок действия до ${expiresOn}.`;
+          const finding = findingForRequirement(result, requirement.id);
+          const testName = finding?.testName || result.testName || requirement.name;
+          const message = `Через ${remainingDays} дн. истекает срок действия результата «${testName}». Дата результата: ${resultDate}; срок действия до ${expiresOn}.`;
           await this.deliverOnce(
             `expiry:${recipientId}:${result.id}:${requirement.id}:${expiresOn}`,
             recipientId,
@@ -198,11 +201,33 @@ function isOnlyIfIndicated(metadata: Record<string, unknown> | null): boolean {
   return typeof metadata?.conditional === 'string' && metadata.conditional.startsWith('only_if_');
 }
 
-function isValidThrough(result: MedicalResult | null, validityDays: number | null, through: string): boolean {
+function isValidThrough(
+  result: MedicalResult | null,
+  requirementId: string,
+  validityDays: number | null,
+  through: string,
+): boolean {
   if (!result || result.interpretationStatus !== 'confirmed' || result.supersededBy) return false;
   if (validityDays == null) return true;
-  if (!result.resultDate) return false;
-  return addDays(result.resultDate, validityDays) >= through;
+  const resultDate = resultDateForRequirement(result, requirementId);
+  if (!resultDate) return false;
+  return addDays(resultDate, validityDays) >= through;
+}
+
+function findingForRequirement(result: MedicalResult, requirementId: string) {
+  return (result.extractedFindings ?? []).find((finding) => finding.requirementIds?.includes(requirementId));
+}
+
+function resultDateForRequirement(result: MedicalResult, requirementId: string): string | null {
+  const linkedFindings = (result.extractedFindings ?? []).filter((finding) =>
+    finding.requirementIds?.includes(requirementId),
+  );
+  if (linkedFindings.length === 0) return result.resultDate;
+  const dates = linkedFindings
+    .filter((finding) => finding.resultDate)
+    .map((finding) => finding.resultDate as string)
+    .sort((a, b) => b.localeCompare(a));
+  return dates[0] ?? null;
 }
 
 function dueDateFor(cycleStartDate: string, requirement: { cycleDayHint: number | null }): string | null {

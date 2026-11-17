@@ -46,10 +46,18 @@ export interface MedicalResult {
   testName?: string;
   resultDate?: string;
   summary?: string;
+  extractedFindings?: ExtractedFinding[] | null;
   normality?: 'normal' | 'abnormal' | null;
   interpretationStatus: string;
   supersededBy?: string | null;
   requirements?: { id: string; name?: string }[];
+}
+export interface ExtractedFinding {
+  testName: string | null;
+  resultDate: string | null;
+  summary: string | null;
+  pageNumber: number | null;
+  requirementIds?: string[];
 }
 @Injectable({ providedIn: 'root' })
 export class PregnantBotApi {
@@ -97,6 +105,7 @@ export class PregnantBotApi {
     proposal: Partial<MedicalResult>,
     requirementIds: string[] = [],
     normality?: 'normal' | 'abnormal',
+    extractedFindings?: ExtractedFinding[],
   ): Observable<MedicalResult> {
     return this.http.post<MedicalResult>(
       `/api/records/results/${encodeURIComponent(id)}/confirm`,
@@ -104,7 +113,9 @@ export class PregnantBotApi {
         testName: proposal.testName,
         resultDate: proposal.resultDate,
         summary: proposal.summary,
+        extractedFindings: proposal.extractedFindings,
         requirementIds,
+        ...(extractedFindings ? { extractedFindings } : {}),
         ...(normality ? { normality } : {}),
       },
       this.options(),

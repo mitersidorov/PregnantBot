@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import type { ExtractedFinding } from '../types/extracted-finding.interface';
 
 export class LinkedRequirementResponseDto {
   @ApiProperty({ format: 'uuid' }) id: string;
@@ -12,6 +13,8 @@ export class MedicalResultResponseDto {
   @ApiProperty({ nullable: true }) testName: string | null;
   @ApiProperty({ nullable: true, format: 'date' }) resultDate: string | null;
   @ApiProperty({ nullable: true }) summary: string | null;
+  @ApiProperty({ type: 'array', items: { type: 'object' }, nullable: true }) extractedFindings:
+    ExtractedFinding[] | null;
   @ApiProperty({ nullable: true, enum: ['normal', 'abnormal'] }) normality: 'normal' | 'abnormal' | null;
   @ApiProperty({ enum: ['pending', 'proposed', 'confirmed'] }) interpretationStatus: string;
   @ApiProperty({

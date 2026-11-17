@@ -20,6 +20,7 @@ import { MedicalFile } from '../entities/medical-file.entity';
 import { MedicalResult } from '../entities/medical-result.entity';
 import { InterpretationService } from './interpretation.service';
 import type { UploadedMedicalFile } from '../types/uploaded-medical-file.interface';
+import type { ExtractedFinding } from '../types/extracted-finding.interface';
 
 @Injectable()
 export class RecordsService {
@@ -161,10 +162,18 @@ export class RecordsService {
       result.testName = proposal.testName;
       result.resultDate = proposal.resultDate;
       result.summary = proposal.summary;
+      result.extractedFindings = proposal.findings ?? [
+        {
+          testName: proposal.testName,
+          resultDate: proposal.resultDate,
+          summary: proposal.summary,
+          pageNumber: null,
+        },
+      ];
       result.interpretationStatus = 'proposed';
       result.modelVersion = this.interpretation.modelName;
-      result.promptVersion = '1';
-      result.schemaVersion = '1';
+      result.promptVersion = '2';
+      result.schemaVersion = '2';
       result.requirements = [];
       return results.save(result);
     });
@@ -175,6 +184,7 @@ export class RecordsService {
       testName?: string;
       resultDate?: string;
       summary?: string;
+      extractedFindings?: ExtractedFinding[];
       requirementIds: string[];
       normality?: 'normal' | 'abnormal';
     },
@@ -199,8 +209,22 @@ export class RecordsService {
       if (!Array.isArray(input.requirementIds) || input.requirementIds.length === 0) {
         throw new BadRequestException('Select at least one checklist requirement before confirming the result.');
       }
-      const requirements = await manager.getRepository(Requirement).findByIds(input.requirementIds);
-      if (requirements.length !== new Set(input.requirementIds).size)
+      let findings = input.extractedFindings ?? result.extractedFindings ?? [];
+      if (findings.length === 0) {
+        findings = [
+          {
+            testName: input.testName ?? result.testName,
+            resultDate: input.resultDate ?? result.resultDate,
+            summary: input.summary ?? result.summary,
+            pageNumber: null,
+          },
+        ];
+      }
+      const requestedRequirementIds = [
+        ...new Set([...input.requirementIds, ...findings.flatMap((finding) => finding.requirementIds ?? [])]),
+      ];
+      const requirements = await manager.getRepository(Requirement).findByIds(requestedRequirementIds);
+      if (requirements.length !== requestedRequirementIds.length)
         throw new NotFoundException('One or more requirements not found');
       if (
         requirements.some(
@@ -219,6 +243,19 @@ export class RecordsService {
       result.resultDate = input.resultDate ?? result.resultDate;
       result.summary = input.summary ?? result.summary;
       result.normality = input.normality ?? result.normality;
+      const requirementIdsByFinding = new Map<number, string[]>();
+      findings.forEach((finding, index) => requirementIdsByFinding.set(index, finding.requirementIds ?? []));
+      for (const requirementId of requestedRequirementIds) {
+        if ([...requirementIdsByFinding.values()].some((ids) => ids.includes(requirementId))) continue;
+        const requirement = requirements.find((item) => item.id === requirementId);
+        const matchingIndex = findings.findIndex((finding) => finding.testName === requirement?.name);
+        const index = matchingIndex >= 0 ? matchingIndex : 0;
+        requirementIdsByFinding.get(index)!.push(requirementId);
+      }
+      result.extractedFindings = findings.map((finding, index) => ({
+        ...finding,
+        requirementIds: [...new Set(requirementIdsByFinding.get(index) ?? [])],
+      }));
       result.requirements = requirements;
       result.interpretationStatus = 'confirmed';
       const saved = await results.save(result);

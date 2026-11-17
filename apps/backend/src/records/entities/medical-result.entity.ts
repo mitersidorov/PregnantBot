@@ -2,6 +2,7 @@ import { Column, Entity, JoinColumn, JoinTable, ManyToMany, ManyToOne, PrimaryGe
 import type { Relation } from 'typeorm';
 import { Requirement } from '../../checklist/entities/requirement.entity';
 import { MedicalFile } from './medical-file.entity';
+import type { ExtractedFinding } from '../types/extracted-finding.interface';
 
 @Entity('medical_results')
 export class MedicalResult {
@@ -11,6 +12,7 @@ export class MedicalResult {
   @Column({ name: 'test_name', type: 'varchar', length: 255, nullable: true }) testName: string | null;
   @Column({ name: 'result_date', type: 'date', nullable: true }) resultDate: string | null;
   @Column({ type: 'text', nullable: true }) summary: string | null;
+  @Column({ name: 'extracted_findings', type: 'json', nullable: true }) extractedFindings: ExtractedFinding[] | null;
   @Column({ type: 'varchar', length: 20, nullable: true }) normality: 'normal' | 'abnormal' | null;
   @Column({ name: 'interpretation_status', type: 'varchar', length: 20, default: 'proposed' })
   interpretationStatus: string;

@@ -30,13 +30,14 @@ export class ChecklistService {
         .andWhere('result.supersededBy IS NULL')
         .orderBy('result.resultDate', 'DESC')
         .getOne();
+      const resultDate = reusable ? resultDateForRequirement(reusable, requirement.id) : null;
       const valid =
         !!reusable &&
         (requirement.branchMetadata?.validityAppliesOnlyIfNoAbnormalities !== true ||
           reusable.normality === 'normal') &&
         (requirement.validityDays == null ||
-          (!!reusable.resultDate &&
-            new Date(new Date(reusable.resultDate).getTime() + requirement.validityDays * 86400000) >=
+          (!!resultDate &&
+            new Date(new Date(resultDate).getTime() + requirement.validityDays * 86400000) >=
               new Date(cycle.startDate)));
 
       await progress.save(
@@ -81,9 +82,10 @@ export class ChecklistService {
     requirements: Requirement[],
   ): Promise<void> {
     for (const requirement of requirements) {
+      const resultDate = resultDateForRequirement(result, requirement.id);
       await manager.query(
         `UPDATE checklist_progress p JOIN cycles c ON c.id = p.cycle_id JOIN requirements q ON q.id = p.requirement_id SET p.status = 'complete', p.result_id = ? WHERE p.requirement_id = ? AND c.status = 'active' AND (q.validity_days IS NULL OR (? IS NOT NULL AND DATE_ADD(?, INTERVAL q.validity_days DAY) >= c.start_date)) AND (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(q.branch_metadata, '$.validityAppliesOnlyIfNoAbnormalities')), 'false') <> 'true' OR ? = 'normal')`,
-        [result.id, requirement.id, result.resultDate, result.resultDate, result.normality ?? ''],
+        [result.id, requirement.id, resultDate, resultDate, result.normality ?? ''],
       );
     }
   }
@@ -97,4 +99,16 @@ export class ChecklistService {
       [resultId],
     );
   }
+}
+
+function resultDateForRequirement(result: MedicalResult, requirementId: string): string | null {
+  const linkedFindings = (result.extractedFindings ?? []).filter((finding) =>
+    finding.requirementIds?.includes(requirementId),
+  );
+  if (linkedFindings.length === 0) return result.resultDate;
+  const dates = linkedFindings
+    .filter((finding) => finding.resultDate)
+    .map((finding) => finding.resultDate as string)
+    .sort((a, b) => b.localeCompare(a));
+  return dates[0] ?? null;
 }
