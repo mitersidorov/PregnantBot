@@ -8,10 +8,7 @@ describe('CyclesController', () => {
   ] as const)('allows the authenticated %s to start a cycle', (patientRole, userId) => {
     const service = { create: jest.fn() };
     const controller = new CyclesController(service as never);
-    controller.create(
-      { startDate: '2026-11-15' },
-      { telegramUser: { id: userId }, patientRole } as never,
-    );
+    controller.create({ startDate: '2026-11-15' }, { telegramUser: { id: userId }, patientRole } as never);
     expect(service.create).toHaveBeenCalledWith('2026-11-15', userId);
   });
 });
