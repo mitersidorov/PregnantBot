@@ -25,9 +25,6 @@ export class CyclesController {
     type: CycleResponseDto,
   })
   create(@Body() dto: CreateCycleDto, @Req() request: AuthorizedRequest) {
-    if (request.patientRole !== 'wife') {
-      throw new ForbiddenException('Only the wife can start a cycle.');
-    }
     return this.service.create(dto.startDate, request.telegramUser.id);
   }
   @Get()

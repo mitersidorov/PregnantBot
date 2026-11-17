@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import { configuredTelegramRoles } from '../../auth/guards/telegram-init-data.guard';
 import { TelegramNotificationService } from './telegram-notification.service';
@@ -12,8 +12,10 @@ interface TelegramUpdate {
 }
 
 @Injectable()
-export class TelegramWebhookService implements OnModuleInit {
+export class TelegramWebhookService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramWebhookService.name);
+  private retryTimer?: ReturnType<typeof setTimeout>;
+  private retryAttempt = 0;
   constructor(private readonly telegram: TelegramNotificationService) {}
 
   async onModuleInit(): Promise<void> {
@@ -25,11 +27,36 @@ export class TelegramWebhookService implements OnModuleInit {
       throw new Error('TELEGRAM_WEBHOOK_URL must use HTTPS.');
     }
     const secretToken = this.configuredSecretToken();
-    await this.telegram.setWebhook(parsedUrl.toString(), secretToken);
+    await this.registerWebhook(parsedUrl.toString(), secretToken);
+  }
+
+  onModuleDestroy(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+  }
+
+  private async registerWebhook(url: string, secretToken: string): Promise<void> {
+    try {
+      await this.telegram.setWebhook(url, secretToken);
+      this.retryAttempt = 0;
+      this.logger.log('Telegram webhook registration succeeded.');
+    } catch (error) {
+      const retryDelayMs = Math.min(300_000, 5_000 * 2 ** Math.min(this.retryAttempt, 6));
+      this.retryAttempt += 1;
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
+      this.logger.warn(`Telegram webhook registration failed; retrying in ${retryDelayMs}ms (${errorName}).`);
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = undefined;
+        void this.registerWebhook(url, secretToken);
+      }, retryDelayMs);
+      this.retryTimer.unref?.();
+    }
   }
 
   async handleUpdate(secretHeader: string | undefined, update: TelegramUpdate): Promise<{ ok: true }> {
-    if (!this.isValidSecret(secretHeader)) throw new UnauthorizedException();
+    if (!this.isValidSecret(secretHeader)) {
+      this.logger.warn('Telegram webhook request rejected: invalid secret token.');
+      throw new UnauthorizedException();
+    }
 
     const message = update?.message;
     if (
