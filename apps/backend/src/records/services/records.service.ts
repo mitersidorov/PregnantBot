@@ -19,6 +19,7 @@ import { Requirement } from '../../checklist/entities/requirement.entity';
 import { MedicalFile } from '../entities/medical-file.entity';
 import { MedicalResult } from '../entities/medical-result.entity';
 import { InterpretationService } from './interpretation.service';
+import { requirementMatchesFinding } from './checklist-finding-matcher';
 import type { UploadedMedicalFile } from '../types/uploaded-medical-file.interface';
 import type { ChecklistMatchedFinding, ExtractedFinding } from '../types/extracted-finding.interface';
 
@@ -162,34 +163,51 @@ export class RecordsService {
       }
 
       const contents = await this.storage.downloadFile(file.objectKey);
-      const proposal = await this.interpretation.proposeFile(contents, file.originalName, file.contentType);
+      const callerRequirements = await this.requirements.find({
+        where: [
+          { active: true, patientApplicability: role },
+          { active: true, patientApplicability: 'both' },
+        ],
+      });
+      const proposal = await this.interpretation.proposeFile(
+        contents,
+        file.originalName,
+        file.contentType,
+        callerRequirements.map(({ id, name }) => ({ id, name })),
+      );
+      const allowedRequirementById = new Map(callerRequirements.map((requirement) => [requirement.id, requirement]));
+      const extractedFindings = (proposal.findings ?? []).map((finding) => ({
+        ...finding,
+        requirementIds: [...new Set(finding.requirementIds ?? [])].filter((requirementId) => {
+          const requirement = allowedRequirementById.get(requirementId);
+          return requirement !== undefined && requirementMatchesFinding(finding.testName, requirement.name);
+        }),
+      }));
       result.testName = proposal.testName;
       result.resultDate = proposal.resultDate;
       result.summary = proposal.summary;
-      result.extractedFindings = proposal.findings ?? [
-        {
-          testName: proposal.testName,
-          resultDate: proposal.resultDate,
-          summary: proposal.summary,
-          pageNumber: null,
-        },
-      ];
+      result.extractedFindings =
+        extractedFindings.length > 0
+          ? extractedFindings
+          : [
+              {
+                testName: proposal.testName,
+                resultDate: proposal.resultDate,
+                summary: proposal.summary,
+                pageNumber: null,
+                requirementIds: [],
+              },
+            ];
       result.interpretationStatus = 'proposed';
       result.modelVersion = this.interpretation.modelName;
       result.promptVersion = '2';
       result.schemaVersion = '2';
       result.requirements = [];
       const saved = await results.save(result);
-      const activeRequirements = await this.requirements.find({ where: { active: true } });
       const matchedFindings = (saved.extractedFindings ?? []).flatMap((finding, findingIndex) => {
-        const requirementIds = activeRequirements
-          .filter(
-            (requirement) =>
-              requirement.name === finding.testName &&
-              (requirement.patientApplicability === role || requirement.patientApplicability === 'both'),
-          )
-          .map((requirement) => requirement.id);
-        return requirementIds.length > 0 ? [{ ...finding, findingIndex, requirementIds }] : [];
+        return finding.requirementIds?.length
+          ? [{ ...finding, requirementIds: finding.requirementIds, findingIndex }]
+          : [];
       });
       return { ...saved, matchedFindings };
     });
@@ -247,7 +265,16 @@ export class RecordsService {
           (requirement) => requirement.patientApplicability !== 'both' && requirement.patientApplicability !== role,
         )
       ) {
-        throw new ForbiddenException('A result can only be linked to requirements for its uploader.');
+        throw new ForbiddenException('A result can only be linked to the authenticated user’s checklist.');
+      }
+      const requirementById = new Map(requirements.map((requirement) => [requirement.id, requirement]));
+      for (const finding of findings) {
+        for (const requirementId of finding.requirementIds ?? []) {
+          const requirement = requirementById.get(requirementId);
+          if (!requirement || !requirementMatchesFinding(finding.testName, requirement.name)) {
+            throw new BadRequestException('A checklist requirement does not match its linked finding.');
+          }
+        }
       }
       const requiresNormality = requirements.some(
         (requirement) => requirement.branchMetadata?.validityAppliesOnlyIfNoAbnormalities === true,
@@ -263,8 +290,10 @@ export class RecordsService {
       findings.forEach((finding, index) => requirementIdsByFinding.set(index, finding.requirementIds ?? []));
       for (const requirementId of requestedRequirementIds) {
         if ([...requirementIdsByFinding.values()].some((ids) => ids.includes(requirementId))) continue;
-        const requirement = requirements.find((item) => item.id === requirementId);
-        const matchingIndex = findings.findIndex((finding) => finding.testName === requirement?.name);
+        const requirement = requirementById.get(requirementId);
+        const matchingIndex = findings.findIndex((finding) =>
+          requirementMatchesFinding(finding.testName, requirement?.name ?? ''),
+        );
         if (matchingIndex < 0) {
           throw new BadRequestException('Every selected checklist requirement must be linked to a matching finding.');
         }

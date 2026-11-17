@@ -375,8 +375,11 @@ type RequirementOption = {
                     >
                     <small>
                       Сдан
-                      {{ resultDateForRequirement(entry.result, item.id) || entry.file.uploadedAt | date: 'dd.MM.yyyy' }} ·
-                      {{ ownerLabel(entry.file) }} ·
+                      {{
+                        resultDateForRequirement(entry.result, item.id) || entry.file.uploadedAt
+                          | date: 'dd.MM.yyyy'
+                      }}
+                      · {{ ownerLabel(entry.file) }} ·
                       @if (validUntil(entry.result, item.id); as expiry) {
                         годен до {{ expiry | date: 'dd.MM.yyyy' }}
                       } @else {
@@ -1281,8 +1284,7 @@ export class WorkspacePage implements OnInit {
           this.denyIdentity();
         }
       },
-      error: (error) =>
-        this.denyIdentity(),
+      error: (error) => this.denyIdentity(),
     });
     this.route.data.subscribe((d) => {
       this.section.set(String(d['section'] ?? 'overview'));
@@ -1878,14 +1880,14 @@ export class WorkspacePage implements OnInit {
     this.uploadPhase.set('review');
   }
   matchesForProposal(result: MedicalResult) {
-    const names = (result.matchedFindings ?? []).map((finding) =>
-      this.displayTestName(finding.testName),
-    );
     const role = this.patientRole();
     if (!role) return [];
+    const requirementIds = new Set(
+      (result.matchedFindings ?? []).flatMap((finding) => finding.requirementIds),
+    );
     return this.requirementOptions().filter(
       (option) =>
-        names.includes(option.name) &&
+        requirementIds.has(option.id) &&
         (option.patientApplicability === role || option.patientApplicability === 'both'),
     );
   }
@@ -1897,25 +1899,20 @@ export class WorkspacePage implements OnInit {
   }[] {
     const result = this.uploadProposal();
     if (!result) return [];
+    const role = this.patientRole();
+    if (!role) return [];
     return (result.matchedFindings ?? []).map((finding) => {
-      const exactOptions = this.requirementOptions().filter(
+      const candidateIds = new Set(finding.requirementIds);
+      const options = this.requirementOptions().filter(
         (option) =>
-          option.name === this.displayTestName(finding.testName) &&
-          (option.patientApplicability === this.patientRole() ||
-            option.patientApplicability === 'both'),
+          candidateIds.has(option.id) &&
+          (option.patientApplicability === role || option.patientApplicability === 'both'),
       );
-      const options = exactOptions.length
-        ? exactOptions
-        : this.requirementOptions().filter(
-            (option) =>
-              option.patientApplicability === this.patientRole() ||
-              option.patientApplicability === 'both',
-          );
       return {
         index: finding.findingIndex,
         finding,
         options,
-        exactMatch: exactOptions.length > 0,
+        exactMatch: options.length > 0,
       };
     });
   }

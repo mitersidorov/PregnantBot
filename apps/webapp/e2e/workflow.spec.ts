@@ -333,14 +333,15 @@ test('reviews checklist-matched findings from a multipage PDF without showing un
   page,
 }) => {
   const urineId = '00000000-0000-4000-8000-000000000011';
-  const rhFactorId = '00000000-0000-4000-8000-000000000042';
+  const wifeRhId = '00000000-0000-4000-8000-000000000024';
+  const husbandRhId = '00000000-0000-4000-8000-000000000042';
   const manualId = '12345678-1234-4234-8234-123456789043';
   let confirmation: Record<string, unknown> | undefined;
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname.endsWith('/auth/me'))
-      return route.fulfill({ json: { patientRole: 'wife', telegramUserId: '288092250' } });
+      return route.fulfill({ json: { patientRole: 'husband', telegramUserId: '288092250' } });
     if (url.pathname.endsWith('/cycles') && request.method() === 'GET')
       return route.fulfill({
         json: [{ id: 'cycle-multi', startDate: '2026-11-15', status: 'active' }],
@@ -356,12 +357,21 @@ test('reviews checklist-matched findings from a multipage PDF without showing un
               requirement: { id: urineId, name: 'Общий анализ мочи', patientApplicability: 'wife' },
             },
             {
-              requirementId: rhFactorId,
+              requirementId: wifeRhId,
               status: 'pending',
               requirement: {
-                id: rhFactorId,
+                id: wifeRhId,
                 name: 'Группа крови, резус-фактор',
                 patientApplicability: 'wife',
+              },
+            },
+            {
+              requirementId: husbandRhId,
+              status: 'pending',
+              requirement: {
+                id: husbandRhId,
+                name: 'Группа крови, резус-фактор',
+                patientApplicability: 'husband',
               },
             },
             {
@@ -423,20 +433,12 @@ test('reviews checklist-matched findings from a multipage PDF without showing un
           ],
           matchedFindings: [
             {
-              testName: 'Общий анализ мочи',
-              resultDate: '2026-10-01',
-              summary: 'Результат мочи.',
-              pageNumber: 1,
-              findingIndex: 0,
-              requirementIds: [urineId],
-            },
-            {
               testName: 'Группа крови, резус-фактор',
               resultDate: '2018-04-12',
               summary: 'Группа крови и резус-фактор.',
               pageNumber: 9,
               findingIndex: 1,
-              requirementIds: [rhFactorId],
+              requirementIds: [husbandRhId],
             },
           ],
         },
@@ -464,18 +466,21 @@ test('reviews checklist-matched findings from a multipage PDF without showing un
   });
   const interpreted = await (await interpretationResponse).json();
   expect(interpreted.extractedFindings).toHaveLength(3);
-  expect(interpreted.matchedFindings).toHaveLength(2);
-  await expect(page.getByText('Общий анализ мочи', { exact: true }).first()).toBeVisible();
+  expect(interpreted.matchedFindings).toHaveLength(1);
+  await expect(page.getByText('Общий анализ мочи', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Группа крови, резус-фактор', { exact: true }).first()).toBeVisible();
+  const rhFinding = page.getByRole('group', { name: 'Группа крови, резус-фактор' });
+  await expect(rhFinding.getByLabel(/женщина/)).toHaveCount(0);
+  await expect(rhFinding.getByLabel(/мужчина/)).toBeVisible();
   await expect(page.getByText(/^Страница /)).toHaveCount(0);
   await expect(page.getByText('Неизвестный анализ', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Совпадение с чеклистом не найдено.')).toHaveCount(0);
   await page.getByRole('button', { name: 'Подтвердить' }).click();
   await expect(page.getByText('Анализ подтверждён.')).toBeVisible();
-  expect(confirmation?.requirementIds).toEqual([urineId, rhFactorId]);
+  expect(confirmation?.requirementIds).toEqual([husbandRhId]);
   expect(confirmation?.extractedFindings).toEqual([
-    expect.objectContaining({ pageNumber: 1, requirementIds: [urineId] }),
-    expect.objectContaining({ pageNumber: 9, requirementIds: [rhFactorId] }),
+    expect.objectContaining({ pageNumber: 1, requirementIds: [] }),
+    expect.objectContaining({ pageNumber: 9, requirementIds: [husbandRhId] }),
     expect.objectContaining({ pageNumber: 12, requirementIds: [] }),
   ]);
 });

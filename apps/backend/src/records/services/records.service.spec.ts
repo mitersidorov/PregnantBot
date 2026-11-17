@@ -79,10 +79,11 @@ describe('RecordsService uploads', () => {
     expect(interpretation.proposeFile).not.toHaveBeenCalled();
   });
 
-  it('confirms only explicitly selected links and advances active-cycle progress', async () => {
+  it('does not let the husband select a wife-only checklist item', async () => {
     const result = {
       id: 'result-1',
       fileId: 'file-1',
+      testName: 'Группа крови, резус-фактор',
       resultDate: '2026-11-15',
       requirements: [],
       supersededBy: null,
@@ -97,9 +98,13 @@ describe('RecordsService uploads', () => {
       createQueryBuilder: jest.fn(() => queryBuilder),
       save: jest.fn(async (value) => value),
     };
-    const requirement = { id: 'req-1', patientApplicability: 'wife' };
+    const requirement = {
+      id: 'wife-rh',
+      name: 'Blood group and Rh factor',
+      patientApplicability: 'wife',
+    };
     const requirementRepository = { findByIds: jest.fn(async () => [requirement]) };
-    const fileRepository = { findOneBy: jest.fn(async () => ({ id: 'file-1', uploadedBy: '101' })) };
+    const fileRepository = { findOneBy: jest.fn(async () => ({ id: 'file-1', uploadedBy: '202' })) };
     const checklist = {
       applyConfirmedResult: jest
         .fn<(manager: unknown, result: unknown, requirements: unknown[]) => Promise<void>>()
@@ -121,10 +126,10 @@ describe('RecordsService uploads', () => {
       { transaction: async (work: (value: typeof manager) => Promise<unknown>) => work(manager) } as never,
       checklist as never,
     );
-    const confirmed = await service.confirm('result-1', { requirementIds: ['req-1'] }, 101, 'wife');
-    expect(confirmed.interpretationStatus).toBe('confirmed');
-    expect(confirmed.requirements).toEqual([requirement]);
-    expect(checklist.applyConfirmedResult).toHaveBeenCalledWith(manager, confirmed, [requirement]);
+    await expect(service.confirm('result-1', { requirementIds: ['wife-rh'] }, 202, 'husband')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(checklist.applyConfirmedResult).not.toHaveBeenCalled();
   });
 
   it('persists each confirmed finding with its own date and checklist links', async () => {
@@ -400,10 +405,10 @@ describe('RecordsService uploads', () => {
     expect(storage.downloadFileStream).toHaveBeenCalledWith('medical/file-2');
   });
 
-  it('interprets the current pending result in place without resetting checklist progress', async () => {
+  it('matches the live multipage PDF to both checklist roles for the husband uploader', async () => {
     const file = {
       id: 'file-1',
-      uploadedBy: '101',
+      uploadedBy: '202',
       objectKey: 'medical/file-1',
       originalName: 'result.pdf',
       contentType: 'application/pdf',
@@ -434,9 +439,24 @@ describe('RecordsService uploads', () => {
       getOne: jest.fn(async () => file),
     };
     const findings = [
-      { testName: 'CBC', resultDate: '2026-11-15', summary: 'Updated', pageNumber: 1 },
-      { testName: 'Blood group', resultDate: '2026-11-14', summary: 'Other role', pageNumber: 4 },
-      { testName: 'Unknown', resultDate: '2026-11-13', summary: 'No checklist match', pageNumber: 9 },
+      { testName: 'Общий анализ мочи', resultDate: '2026-11-15', summary: null, pageNumber: 1 },
+      { testName: 'Гинекологический мазок (анализ на флору)', resultDate: null, summary: null, pageNumber: 2 },
+      { testName: 'Общий анализ крови', resultDate: null, summary: null, pageNumber: 4 },
+      {
+        testName: 'ВИЧ (комбинированные антитела к ВИЧ и антигену Р24 в крови)',
+        resultDate: null,
+        summary: null,
+        pageNumber: 6,
+      },
+      { testName: 'Коагулограмма (ПТИ)', resultDate: null, summary: null, pageNumber: 6 },
+      { testName: 'Коагулограмма (PT)', resultDate: null, summary: null, pageNumber: 6 },
+      { testName: 'Коагулограмма (ИНР)', resultDate: null, summary: null, pageNumber: 7 },
+      { testName: 'Коагулограмма (aPTT)', resultDate: null, summary: null, pageNumber: 7 },
+      { testName: 'Биохимический анализ крови (глюкоза)', resultDate: null, summary: null, pageNumber: 8 },
+      { testName: 'Сифилис (anti-Treponema pallidum в крови)', resultDate: null, summary: null, pageNumber: 8 },
+      { testName: 'Гепатит B (поверхностный антиген HBsAg)', resultDate: null, summary: null, pageNumber: 8 },
+      { testName: 'Гепатит C (antiHCV, антитела в крови)', resultDate: null, summary: null, pageNumber: 8 },
+      { testName: 'Группа крови, резус-фактор', resultDate: null, summary: null, pageNumber: 9 },
     ];
     const resultRepository = {
       createQueryBuilder: jest
@@ -455,24 +475,50 @@ describe('RecordsService uploads', () => {
       transaction: jest.fn(<T>(work: (value: typeof manager) => Promise<T>) => work(manager)),
     };
     const storage = { downloadFile: jest.fn(async (key: string) => (void key, Buffer.from('%PDF-1.7'))) };
+    let sentRequirements: { id: string; name: string }[] = [];
     const interpretation = {
-      proposeFile: jest.fn(async () => ({
-        testName: 'CBC',
-        resultDate: '2026-11-15',
-        summary: 'Updated',
-        pageNumber: 1,
-        findings,
-      })),
+      proposeFile: jest.fn(
+        async (
+          _bytes: Buffer,
+          _fileName: string,
+          _contentType: string,
+          requirements: { id: string; name: string }[],
+        ) => {
+          sentRequirements = requirements;
+          return {
+            testName: findings[0].testName,
+            resultDate: '2026-11-15',
+            summary: 'Updated',
+            pageNumber: 1,
+            findings,
+          };
+        },
+      ),
       modelName: 'test-model',
     };
     const checklist = { resetActiveProgressForResult: jest.fn() };
     const requirementRepository = {
-      find: jest.fn(async (options: { where: { active: boolean } }) => {
+      find: jest.fn(async (options: unknown) => {
         void options;
         return [
-          { id: 'cbc-requirement', name: 'CBC', patientApplicability: 'wife', active: true },
-          { id: 'blood-group-requirement', name: 'Blood group', patientApplicability: 'husband', active: true },
-        ];
+          { id: 'w-urine', name: 'Urinalysis', patientApplicability: 'wife', active: true },
+          { id: 'w-flora', name: 'Flora smear', patientApplicability: 'wife', active: true },
+          { id: 'w-cbc', name: 'Complete blood count (CBC)', patientApplicability: 'wife', active: true },
+          { id: 'w-hiv', name: 'Combined HIV Ag/Ab + P24', patientApplicability: 'wife', active: true },
+          { id: 'w-pti', name: 'PTI (prothrombin index)', patientApplicability: 'wife', active: true },
+          { id: 'w-inr', name: 'INR', patientApplicability: 'wife', active: true },
+          { id: 'w-aptt', name: 'APTT', patientApplicability: 'wife', active: true },
+          { id: 'w-glucose', name: 'Glucose', patientApplicability: 'wife', active: true },
+          { id: 'w-syphilis', name: 'anti-Treponema', patientApplicability: 'wife', active: true },
+          { id: 'w-hbsag', name: 'HBsAg', patientApplicability: 'wife', active: true },
+          { id: 'w-hcv', name: 'anti-HCV', patientApplicability: 'wife', active: true },
+          { id: 'w-rh', name: 'Blood group and Rh factor', patientApplicability: 'wife', active: true },
+          { id: 'h-hiv', name: 'HIV Ag/Ab + P24', patientApplicability: 'husband', active: true },
+          { id: 'h-syphilis', name: 'Syphilis (anti-Treponema)', patientApplicability: 'husband', active: true },
+          { id: 'h-hbsag', name: 'HBsAg', patientApplicability: 'husband', active: true },
+          { id: 'h-hcv', name: 'anti-HCV', patientApplicability: 'husband', active: true },
+          { id: 'h-rh', name: 'Blood group and Rh factor', patientApplicability: 'husband', active: true },
+        ].filter(({ patientApplicability }) => patientApplicability === 'husband');
       }),
     };
     const service = new RecordsService(
@@ -485,28 +531,61 @@ describe('RecordsService uploads', () => {
       checklist as never,
     );
 
-    const interpreted = await service.interpret('result-1', 101, 'wife');
+    const matchedIdsByIndex: Record<number, string[]> = {
+      3: ['h-hiv', 'w-hiv'],
+      9: ['h-syphilis', 'w-syphilis'],
+      10: ['h-hbsag', 'w-hbsag'],
+      11: ['h-hcv', 'w-hcv'],
+      12: ['h-rh', 'w-rh'],
+    };
+    findings.forEach((finding, index) => Object.assign(finding, { requirementIds: matchedIdsByIndex[index] ?? [] }));
+    const interpreted = await service.interpret('result-1', 202, 'husband');
 
     expect(interpreted).toMatchObject({
       id: 'result-1',
       versionNumber: 1,
       interpretationStatus: 'proposed',
-      testName: 'CBC',
+      testName: findings[0].testName,
       resultDate: '2026-11-15',
       supersededBy: null,
       requirements: [],
-      extractedFindings: findings,
-      matchedFindings: [
-        {
-          ...findings[0],
-          findingIndex: 0,
-          requirementIds: ['cbc-requirement'],
-        },
-      ],
+      extractedFindings: findings.map((finding) => ({
+        ...finding,
+        requirementIds: ((finding as { requirementIds?: string[] }).requirementIds ?? []).filter((requirementId) =>
+          requirementId.startsWith('h-'),
+        ),
+      })),
     });
-    expect(requirementRepository.find).toHaveBeenCalledWith({ where: { active: true } });
+    expect(interpreted.matchedFindings).toHaveLength(5);
+    expect(
+      interpreted.matchedFindings.map(({ testName, pageNumber, requirementIds }) => ({
+        testName,
+        pageNumber,
+        requirementIds,
+      })),
+    ).toEqual([
+      { testName: findings[3].testName, pageNumber: 6, requirementIds: ['h-hiv'] },
+      { testName: findings[9].testName, pageNumber: 8, requirementIds: ['h-syphilis'] },
+      { testName: findings[10].testName, pageNumber: 8, requirementIds: ['h-hbsag'] },
+      { testName: findings[11].testName, pageNumber: 8, requirementIds: ['h-hcv'] },
+      { testName: findings[12].testName, pageNumber: 9, requirementIds: ['h-rh'] },
+    ]);
+    expect(requirementRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.arrayContaining([
+          { active: true, patientApplicability: 'husband' },
+          { active: true, patientApplicability: 'both' },
+        ]),
+      }),
+    );
     expect(resultRepository.save).toHaveBeenCalledTimes(1);
-    expect(interpretation.proposeFile).toHaveBeenCalledTimes(1);
+    expect(sentRequirements).toEqual(
+      expect.arrayContaining([
+        { id: 'h-hiv', name: 'HIV Ag/Ab + P24' },
+        { id: 'h-rh', name: 'Blood group and Rh factor' },
+      ]),
+    );
+    expect(sentRequirements).not.toEqual(expect.arrayContaining([{ id: 'w-rh', name: 'Blood group and Rh factor' }]));
     expect(checklist.resetActiveProgressForResult).not.toHaveBeenCalled();
   });
 
@@ -583,7 +662,7 @@ describe('RecordsService uploads', () => {
     const service = new RecordsService(
       {} as never,
       {} as never,
-      {} as never,
+      { find: jest.fn(async () => []) } as never,
       storage as never,
       interpretation as never,
       { transaction: async (work: (value: typeof manager) => Promise<unknown>) => work(manager) } as never,
