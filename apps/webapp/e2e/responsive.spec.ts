@@ -190,7 +190,14 @@ test.describe('responsive Telegram screens and workflows', () => {
       });
       await uploadResponse;
       await expect(page.locator('.upload-review')).toBeVisible();
-      await expect(page.getByText('Synthetic result')).toBeVisible();
+      const uploadFinding = page.locator('.proposal-finding');
+      await expect(uploadFinding.locator('.recognized-finding strong')).toHaveText(
+        'Биохимический анализ крови (АЛТ)',
+      );
+      await expect(
+        uploadFinding.getByLabel('Биохимический анализ крови (АЛТ)', { exact: true }),
+      ).toBeChecked();
+      await expect(page.getByText('Synthetic result')).toHaveCount(0);
       await expect(page.locator('.preview')).toHaveCount(0);
       await expect(page.locator('.file-name')).toHaveText('sample.pdf');
       const proposalBox = await page.locator('.proposal').boundingBox();

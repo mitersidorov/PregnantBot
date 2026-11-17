@@ -325,7 +325,14 @@ test('does not interpret an upload that already contains an OpenAI proposal', as
     buffer: Buffer.from('%PDF synthetic'),
   });
   await expect(page.locator('.upload-review')).toBeVisible();
-  await expect(page.getByText('Already interpreted')).toBeVisible();
+  const alreadyMatched = page.locator('.proposal-finding');
+  await expect(alreadyMatched.locator('.recognized-finding strong')).toHaveText(
+    'Биохимический анализ крови (АЛТ)',
+  );
+  await expect(
+    alreadyMatched.getByLabel('Биохимический анализ крови (АЛТ)', { exact: true }),
+  ).toBeChecked();
+  await expect(page.getByText('Already interpreted')).toHaveCount(0);
   expect(interpretationCalls).toBe(0);
 });
 
