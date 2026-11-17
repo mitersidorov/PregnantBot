@@ -249,8 +249,12 @@ export class RecordsService {
         if ([...requirementIdsByFinding.values()].some((ids) => ids.includes(requirementId))) continue;
         const requirement = requirements.find((item) => item.id === requirementId);
         const matchingIndex = findings.findIndex((finding) => finding.testName === requirement?.name);
-        const index = matchingIndex >= 0 ? matchingIndex : 0;
-        requirementIdsByFinding.get(index)!.push(requirementId);
+        if (matchingIndex < 0) {
+          throw new BadRequestException(
+            'Every selected checklist requirement must be linked to a matching finding.',
+          );
+        }
+        requirementIdsByFinding.get(matchingIndex)!.push(requirementId);
       }
       result.extractedFindings = findings.map((finding, index) => ({
         ...finding,

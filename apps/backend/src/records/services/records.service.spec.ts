@@ -200,6 +200,58 @@ describe('RecordsService uploads', () => {
     ]);
   });
 
+  it('rejects an unmatched top-level requirement instead of linking it to the first finding', async () => {
+    const result = {
+      id: 'result-1',
+      fileId: 'file-1',
+      extractedFindings: [],
+      requirements: [],
+      supersededBy: null,
+      interpretationStatus: 'proposed',
+    };
+    const queryBuilder = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => result),
+    };
+    const save = jest.fn(async (value) => value);
+    const requirement = { id: 'req-other', name: 'Unrelated requirement', patientApplicability: 'wife' };
+    const manager = {
+      getRepository: jest.fn((entity: typeof MedicalResult | typeof Requirement | typeof MedicalFile) => {
+        if (entity === MedicalResult) return { createQueryBuilder: () => queryBuilder, save };
+        if (entity === MedicalFile) return { findOneBy: async () => ({ id: 'file-1', uploadedBy: '101' }) };
+        return { findByIds: async () => [requirement] };
+      }),
+    };
+    const applyConfirmedResult = jest.fn();
+    const service = new RecordsService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { transaction: async (work: (value: typeof manager) => Promise<unknown>) => work(manager) } as never,
+      { applyConfirmedResult } as never,
+    );
+
+    await expect(
+      service.confirm(
+        'result-1',
+        {
+          requirementIds: ['req-other'],
+          extractedFindings: [
+            { testName: 'Study one', resultDate: '2026-10-01', summary: null, pageNumber: 1 },
+            { testName: 'Study two', resultDate: '2018-04-12', summary: null, pageNumber: 9 },
+          ],
+        },
+        101,
+        'wife',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(save).not.toHaveBeenCalled();
+    expect(applyConfirmedResult).not.toHaveBeenCalled();
+  });
+
   it('does not allow the other allowlisted user to confirm an uploaded result', async () => {
     const queryBuilder = {
       setLock: jest.fn().mockReturnThis(),
