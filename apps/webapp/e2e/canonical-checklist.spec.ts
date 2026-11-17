@@ -77,7 +77,8 @@ test('renders the API checklist by role and preserves IDs in assignment confirma
   await page.route('**/api/**', async (route) => {
     const req = route.request(),
       u = new URL(req.url());
-    if (u.pathname.endsWith('/auth/me')) return route.fulfill({ json: { patientRole: 'wife' } });
+    if (u.pathname.endsWith('/auth/me'))
+      return route.fulfill({ json: { patientRole: 'wife', telegramUserId: '123169226' } });
     if (u.pathname.endsWith('/cycles') && req.method() === 'GET')
       return route.fulfill({
         json: [{ id: 'cycle-x', startDate: '2026-11-15', status: 'active' }],
@@ -200,7 +201,8 @@ test('shows every linked file with submission date, owner and validity under its
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname.endsWith('/auth/me')) return route.fulfill({ json: { patientRole: 'wife' } });
+    if (url.pathname.endsWith('/auth/me'))
+      return route.fulfill({ json: { patientRole: 'wife', telegramUserId: '123169226' } });
     if (url.pathname.endsWith('/cycles') && request.method() === 'GET')
       return route.fulfill({
         json: [{ id: 'cycle-x', startDate: '2026-11-15', status: 'active' }],

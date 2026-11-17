@@ -16,4 +16,17 @@ export class TelegramNotificationService {
     });
     if (!response.data?.ok) throw new ServiceUnavailableException('Telegram rejected the notification.');
   }
+
+  async setWebhook(url: string, secretToken: string): Promise<void> {
+    const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+    if (!token) throw new ServiceUnavailableException('Telegram webhook registration is not configured.');
+    const baseUrl = (process.env.TELEGRAM_API_BASE_URL?.trim() || 'https://api.telegram.org').replace(/\/+$/, '');
+    const response = await this.http.post<{ ok?: boolean }>(`${baseUrl}/bot${token}/setWebhook`, {
+      url,
+      secret_token: secretToken,
+      allowed_updates: ['message'],
+      drop_pending_updates: false,
+    });
+    if (!response.data?.ok) throw new ServiceUnavailableException('Telegram rejected webhook registration.');
+  }
 }

@@ -13,7 +13,7 @@ cp .env.development.example .env.development.local
 npm start
 ```
 
-The Angular dev server serves the browser app and proxies same-origin `/api/*` requests to `BACKEND_URL` (default `http://localhost:3000`), stripping the `/api` prefix. The Node-only proxy reads `API_KEY` from `.env.development.local` and injects `X-API-KEY`; this value is never compiled into or sent by browser code. The frontend sends Telegram's original signed `initData` in `X-Telegram-Init-Data` when hosted in Telegram. For the Docker test stack at `localhost:4200`, it sends the hardcoded local test ID `123169226`; the backend accepts this header only in `NODE_ENV=test`. This does not create or imitate signed Telegram data and is not accepted in production. Do not commit `.env.development.local` or place server credentials in `src/` or Angular environment files.
+The Angular dev server serves the browser app and proxies same-origin `/api/*` requests to `BACKEND_URL` (default `http://localhost:3000`), stripping the `/api` prefix. The Node-only proxy reads `API_KEY` from `.env.development.local` and injects `X-API-KEY`; this value is never compiled into or sent by browser code. The frontend sends Telegram's original signed `initData` in `X-Telegram-Init-Data` when hosted in Telegram. For the Docker test stack at `localhost:4200`, the web server injects test user ID `123169226` only when signed initData is absent; the backend accepts this header only in `NODE_ENV=test`. This does not create or imitate signed Telegram data and is not accepted in production. Do not commit `.env.development.local` or place server credentials in `src/` or Angular environment files.
 
 The browser calls only the same-origin `/api/*` proxy. The development proxy injects `X-API-KEY` from Node process environment and strips `/api`; production hosting must do the equivalent server-side (inject server-held `X-API-KEY`, remove the prefix, and route `/api/*` to NestJS). Never add the API key to Angular config or assets. Telegram signed `initData` is forwarded as `X-Telegram-Init-Data` only; raw Telegram IDs are never sent as identity.
 
@@ -21,9 +21,9 @@ Implemented backend paths: `GET/POST /cycles`, `GET /cycles/:id`, `PATCH /cycles
 
 ## Screens
 
-- Overview: private shared-space landing page and setup preview.
+- Overview: robot illustration and primary action are centered together in the usable viewport; on mobile, the fixed navigation height and safe-area inset are excluded from the centered area.
 - Cycles: create and view cycles; update each cycle's checklist.
-- Records: upload PDF/JPEG/PNG, request interpretation, review and confirm proposals, view unknown and superseded results, and download individual files or the archive.
+- Records: upload PDF/JPEG/PNG, request interpretation, review and confirm proposals, view unknown and superseded results, and download individual files or the archive. Checklist rows have no divider lines; available file counts use badges. A preparation section at the bottom opens the preparation picker.
 
 ## Playwright workflow checks
 

@@ -47,6 +47,10 @@ jobs:
           npm run lint
           npm run build
 
+      - name: Verify global and per-route throttling
+        working-directory: apps/backend
+        run: npm run test:throttler
+
       - name: Install web app dependencies
         working-directory: apps/webapp
         run: npm ci

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlingModule } from './common/throttling/throttling.module';
 import { DatabaseModule } from './common/database/database.module';
 import { S3Module } from './common/s3/s3.module';
 import { ErrorModule } from './common/error/error.module';
@@ -15,9 +15,9 @@ import { NotificationsModule } from './notifications/notifications.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
     ScheduleModule.forRoot(),
     AuthModule,
+    ThrottlingModule,
     DatabaseModule,
     S3Module,
     ErrorModule,

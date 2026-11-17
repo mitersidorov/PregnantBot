@@ -55,7 +55,7 @@ describe('GET /auth/me', () => {
       .set('X-API-KEY', 'auth-me-test-api-key')
       .set('X-Telegram-Init-Data', signedInitData(userId))
       .expect(200)
-      .expect({ patientRole });
+      .expect({ patientRole, telegramUserId: String(userId) });
   });
 
   it('rejects requests without Telegram authentication', async () => {

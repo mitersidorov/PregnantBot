@@ -37,7 +37,7 @@ test.describe('responsive Telegram screens and workflows', () => {
         const req = route.request();
         const url = new URL(req.url());
         if (url.pathname.endsWith('/auth/me'))
-          return route.fulfill({ json: { patientRole: 'wife' } });
+          return route.fulfill({ json: { patientRole: 'wife', telegramUserId: '123169226' } });
         if (url.pathname.endsWith('/cycles') && req.method() === 'GET')
           return route.fulfill({
             json: cycleStarted
@@ -149,7 +149,15 @@ test.describe('responsive Telegram screens and workflows', () => {
       expect((await page.request.get('/favicon.ico')).status()).toBe(200);
       await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toHaveCount(0);
       await noOverflow();
-      await page.getByRole('button', { name: 'Начать подготовку' }).click();
+      const homeRobot = page.locator('.home-robot');
+      const startPreparation = page.getByRole('button', { name: 'Начать подготовку' });
+      await expect(homeRobot).toHaveAttribute('alt', 'Беременный робот');
+      const robotBox = await homeRobot.boundingBox();
+      const startBox = await startPreparation.boundingBox();
+      expect(robotBox).not.toBeNull();
+      expect(startBox).not.toBeNull();
+      expect(robotBox!.y + robotBox!.height).toBeLessThanOrEqual(startBox!.y);
+      await startPreparation.click();
       const nav = page.getByRole('navigation', { name: 'Основная навигация' });
       await expect(nav).toBeVisible();
       const homeLink = nav.getByRole('link', { name: 'Загрузить анализ' });
@@ -161,6 +169,7 @@ test.describe('responsive Telegram screens and workflows', () => {
       ).toBeVisible();
 
       await page.goto('/');
+      await expect(page.locator('.home-robot')).toBeVisible();
       const uploadResponse = page.waitForResponse((response) =>
         response.url().endsWith('/api/records/uploads'),
       );
@@ -208,7 +217,15 @@ test.describe('responsive Telegram screens and workflows', () => {
       await expect(unmatchedFile.getByRole('button', { name: 'Назначить' })).toBeVisible();
       await expect(unmatchedFile.locator('button, a')).toHaveCount(2);
 
-      await page.getByRole('button', { name: 'Выбрать подготовку' }).click();
+      const choosePreparation = page.getByRole('button', { name: 'Выбрать подготовку' });
+      await choosePreparation.scrollIntoViewIfNeeded();
+      const chooseBox = await choosePreparation.boundingBox();
+      const unmatchedBox = await unmatchedFile.boundingBox();
+      expect(chooseBox).not.toBeNull();
+      expect(unmatchedBox).not.toBeNull();
+      expect(chooseBox!.x).toBeLessThan(viewport.width / 2);
+      expect(chooseBox!.y).toBeGreaterThan(unmatchedBox!.y);
+      await choosePreparation.click();
       const attemptsDialog = page.getByRole('dialog');
       await expect(
         attemptsDialog.getByRole('heading', { name: 'Выбрать подготовку' }),

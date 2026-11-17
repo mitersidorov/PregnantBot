@@ -1,6 +1,8 @@
 import { CanActivate, ExecutionContext, Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Request } from 'express';
+import { PUBLIC_ROUTE_METADATA } from '../decorators/public-route.decorator';
 
 interface TelegramUser {
   id: number;
@@ -8,10 +10,30 @@ interface TelegramUser {
 }
 
 export type AuthorizedRequest = Request & { telegramUser: TelegramUser; patientRole: 'wife' | 'husband' };
+export type PatientRole = 'wife' | 'husband';
+
+export function configuredTelegramRoles(): Map<number, PatientRole> {
+  const roles = new Map<number, PatientRole>();
+  const configured = [
+    ['TELEGRAM_WIFE_USER_ID', 'wife'],
+    ['TELEGRAM_HUSBAND_USER_ID', 'husband'],
+  ] as const;
+  for (const [variable, role] of configured) {
+    const raw = process.env[variable]?.trim();
+    if (!raw) continue;
+    if (!/^\d+$/.test(raw)) return new Map();
+    const id = Number(raw);
+    if (!Number.isSafeInteger(id) || id <= 0 || roles.has(id)) return new Map();
+    roles.set(id, role);
+  }
+  return roles;
+}
 
 // Verifies Telegram Web App initData signatures, freshness, and the configured account allowlist.
 @Injectable()
 export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
+  constructor(private readonly reflector: Reflector) {}
+
   onModuleInit(): void {
     if (!process.env.TELEGRAM_BOT_TOKEN?.trim() || !this.getAllowedIds()) {
       throw new Error('Telegram bot token and at least one valid role-specific Telegram user ID must be configured.');
@@ -24,6 +46,9 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<AuthorizedRequest>();
+    if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE_METADATA, [context.getHandler(), context.getClass()])) {
+      return true;
+    }
     if (this.allowConfiguredLocalTestUser(request)) return true;
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const allowedIds = this.getAllowedIds();
@@ -98,20 +123,7 @@ export class TelegramInitDataGuard implements CanActivate, OnModuleInit {
   }
 
   private getRoles(): Map<number, 'wife' | 'husband'> {
-    const roles = new Map<number, 'wife' | 'husband'>();
-    const configured = [
-      ['TELEGRAM_WIFE_USER_ID', 'wife'],
-      ['TELEGRAM_HUSBAND_USER_ID', 'husband'],
-    ] as const;
-    for (const [variable, role] of configured) {
-      const raw = process.env[variable]?.trim();
-      if (!raw) continue;
-      if (!/^\d+$/.test(raw)) return new Map();
-      const id = Number(raw);
-      if (!Number.isSafeInteger(id) || id <= 0 || roles.has(id)) return new Map();
-      roles.set(id, role);
-    }
-    return roles;
+    return configuredTelegramRoles();
   }
 
   private unauthorized(): UnauthorizedException {

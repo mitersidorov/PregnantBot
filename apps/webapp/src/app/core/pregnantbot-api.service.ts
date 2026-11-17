@@ -38,6 +38,7 @@ export interface UploadResponse {
 export type PatientRole = 'wife' | 'husband';
 export interface CurrentUserResponse {
   patientRole: PatientRole;
+  telegramUserId: string;
 }
 export interface MedicalResult {
   id: string;

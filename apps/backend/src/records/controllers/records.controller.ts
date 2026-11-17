@@ -9,6 +9,7 @@ import { RecordsService } from '../services/records.service';
 import type { UploadedMedicalFile } from '../types/uploaded-medical-file.interface';
 import { ErrorResponseDto } from '../../common/error/error-response.dto';
 import { MedicalFileResponseDto, MedicalResultResponseDto, UploadResponseDto } from '../dto/record-response.dto';
+import { ThrottleRoute } from '../../common/throttling/throttle-route.decorator';
 
 @ApiTags('records')
 @ApiResponse({ status: 400, description: 'Invalid request; common error envelope.', type: ErrorResponseDto })
@@ -29,6 +30,7 @@ import { MedicalFileResponseDto, MedicalResultResponseDto, UploadResponseDto } f
 export class RecordsController {
   constructor(private readonly service: RecordsService) {}
   @Post('uploads')
+  @ThrottleRoute(10, 60000)
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -89,6 +91,7 @@ export class RecordsController {
     return stream.pipe(response);
   }
   @Post('results/:id/interpret')
+  @ThrottleRoute(5, 60000)
   @HttpCode(200)
   @ApiOperation({
     summary:
