@@ -9,6 +9,7 @@ describe('TelegramWebhookService', () => {
     baseUrl: process.env.TELEGRAM_API_BASE_URL,
     secret: process.env.TELEGRAM_WEBHOOK_SECRET,
     url: process.env.TELEGRAM_WEBHOOK_URL,
+    registerOnStart: process.env.TELEGRAM_REGISTER_WEBHOOK_ON_START,
     wife: process.env.TELEGRAM_WIFE_USER_ID,
     husband: process.env.TELEGRAM_HUSBAND_USER_ID,
   };
@@ -19,6 +20,7 @@ describe('TelegramWebhookService', () => {
       ['TELEGRAM_API_BASE_URL', previous.baseUrl],
       ['TELEGRAM_WEBHOOK_SECRET', previous.secret],
       ['TELEGRAM_WEBHOOK_URL', previous.url],
+      ['TELEGRAM_REGISTER_WEBHOOK_ON_START', previous.registerOnStart],
       ['TELEGRAM_WIFE_USER_ID', previous.wife],
       ['TELEGRAM_HUSBAND_USER_ID', previous.husband],
     ] as const;
@@ -31,6 +33,7 @@ describe('TelegramWebhookService', () => {
   });
 
   const setup = () => {
+    process.env.TELEGRAM_REGISTER_WEBHOOK_ON_START = 'false';
     process.env.TELEGRAM_WEBHOOK_SECRET = 'synthetic_webhook_secret';
     process.env.TELEGRAM_WIFE_USER_ID = '101';
     process.env.TELEGRAM_HUSBAND_USER_ID = '202';
@@ -84,6 +87,7 @@ describe('TelegramWebhookService', () => {
 
   it('registers the HTTPS webhook with Telegram when configured', async () => {
     const { service, telegram } = setup();
+    process.env.TELEGRAM_REGISTER_WEBHOOK_ON_START = 'true';
     process.env.TELEGRAM_WEBHOOK_URL = 'https://app.example.test/api/webhooks/telegram';
     await service.onModuleInit();
     expect(telegram.setWebhook).toHaveBeenCalledWith(
@@ -95,6 +99,7 @@ describe('TelegramWebhookService', () => {
   it('keeps startup available when Telegram webhook registration times out', async () => {
     jest.useFakeTimers();
     const { service, telegram } = setup();
+    process.env.TELEGRAM_REGISTER_WEBHOOK_ON_START = 'true';
     process.env.TELEGRAM_WEBHOOK_URL = 'https://app.example.test/api/webhooks/telegram';
     telegram.setWebhook.mockRejectedValueOnce(new Error('ETIMEDOUT'));
 
@@ -106,5 +111,13 @@ describe('TelegramWebhookService', () => {
     expect(telegram.setWebhook).toHaveBeenCalledTimes(2);
     service.onModuleDestroy();
     jest.useRealTimers();
+  });
+
+  it('does not call setWebhook on ordinary startup', async () => {
+    const { service, telegram } = setup();
+    process.env.TELEGRAM_WEBHOOK_URL = 'https://app.example.test/api/webhooks/telegram';
+
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
+    expect(telegram.setWebhook).not.toHaveBeenCalled();
   });
 });

@@ -19,8 +19,15 @@ export class TelegramWebhookService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly telegram: TelegramNotificationService) {}
 
   async onModuleInit(): Promise<void> {
+    if (process.env.TELEGRAM_REGISTER_WEBHOOK_ON_START?.trim().toLowerCase() !== 'true') {
+      this.logger.log('Skipping Telegram webhook registration; using the webhook already configured with Telegram.');
+      return;
+    }
+
     const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL?.trim();
-    if (!webhookUrl) return;
+    if (!webhookUrl) {
+      throw new Error('TELEGRAM_WEBHOOK_URL is required when TELEGRAM_REGISTER_WEBHOOK_ON_START=true.');
+    }
 
     const parsedUrl = new URL(webhookUrl);
     if (parsedUrl.protocol !== 'https:') {
