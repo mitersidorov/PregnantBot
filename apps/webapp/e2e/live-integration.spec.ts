@@ -83,6 +83,10 @@ test('real browser flow: cycle, live upload proposal, explicit checklist confirm
   const cycleListResponse = await cycleListPromise;
   const cycleHeaders = await cycleListResponse.request().allHeaders();
   expect(Boolean(cycleHeaders['x-telegram-init-data']), 'Telegram initData forwarded').toBe(true);
+  expect(
+    Boolean(cycleHeaders['x-local-test-user-id']),
+    'browser must not send the local test identity header',
+  ).toBe(false);
   expect(Boolean(cycleHeaders['x-api-key']), 'API key must stay out of the browser').toBe(false);
   expect(cycleListResponse.status(), 'cycle list status').toBe(200);
   const existingCycles = (await cycleListResponse.json()) as {

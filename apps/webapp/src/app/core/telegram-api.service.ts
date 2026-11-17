@@ -25,9 +25,9 @@ export interface HealthResponse {
 /** Same-origin API boundary; API keys are injected by the server-side reverse proxy, never by this app. */
 @Injectable({ providedIn: 'root' })
 export class TelegramApiService {
-  private static readonly localTestUserId = '123169226';
   private readonly http = inject(HttpClient);
   private readonly webApp = typeof window === 'undefined' ? undefined : window.Telegram?.WebApp;
+  private authenticatedUserId?: string;
 
   readonly isTelegramWebApp = Boolean(this.webApp?.initData);
 
@@ -41,12 +41,15 @@ export class TelegramApiService {
   }
 
   currentUserId(): string | undefined {
-    const id = this.webApp?.initDataUnsafe?.user?.id;
-    if (Number.isSafeInteger(id)) return String(id);
-    const hostname = typeof window === 'undefined' ? '' : window.location.hostname;
-    return hostname === 'localhost' || hostname === '127.0.0.1'
-      ? TelegramApiService.localTestUserId
-      : undefined;
+    return this.authenticatedUserId;
+  }
+
+  setAuthenticatedUserId(telegramUserId: string): void {
+    this.authenticatedUserId = telegramUserId;
+  }
+
+  clearAuthenticatedUserId(): void {
+    this.authenticatedUserId = undefined;
   }
 
   checkHealth(): Observable<HealthResponse> {
@@ -57,9 +60,6 @@ export class TelegramApiService {
   authHeaders(): HttpHeaders {
     const initData = this.webApp?.initData;
     if (initData) return new HttpHeaders({ 'X-Telegram-Init-Data': initData });
-    if (this.currentUserId() === TelegramApiService.localTestUserId) {
-      return new HttpHeaders({ 'X-Local-Test-User-ID': TelegramApiService.localTestUserId });
-    }
     return new HttpHeaders();
   }
 }

@@ -10,6 +10,11 @@ const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ count }));
     return;
   }
+  if (request.method === 'POST' && /^\/bot[^/]+\/setWebhook$/.test(request.url || '')) {
+    request.resume();
+    response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, result: true }));
+    return;
+  }
   if (request.method === 'POST' && /^\/bot[^/]+\/sendMessage$/.test(request.url || '')) {
     request.resume();
     count += 1;

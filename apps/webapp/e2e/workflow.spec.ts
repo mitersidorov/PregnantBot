@@ -42,7 +42,7 @@ test('start preparation, interpret a pending upload once, confirm it and browse 
     const req = route.request();
     const url = new URL(req.url());
     if (url.pathname.endsWith('/auth/me'))
-      return route.fulfill({ json: { patientRole: 'husband' } });
+      return route.fulfill({ json: { patientRole: 'husband', telegramUserId: '123169226' } });
     if (url.pathname.endsWith('/cycles') && req.method() === 'GET')
       return route.fulfill({
         json: cycleStarted ? [{ id: 'cycle-1', startDate: '2026-11-15', status: 'active' }] : [],
@@ -231,7 +231,8 @@ test('does not interpret an upload that already contains an OpenAI proposal', as
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname.endsWith('/auth/me')) return route.fulfill({ json: { patientRole: 'wife' } });
+    if (url.pathname.endsWith('/auth/me'))
+      return route.fulfill({ json: { patientRole: 'wife', telegramUserId: '123169226' } });
     if (url.pathname.endsWith('/cycles') && request.method() === 'GET')
       return route.fulfill({
         json: [{ id: 'cycle-a', startDate: '2026-11-15', status: 'active' }],
@@ -326,7 +327,8 @@ for (const role of ['wife', 'husband'] as const) {
     await page.route('**/api/**', async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      if (url.pathname.endsWith('/auth/me')) return route.fulfill({ json: { patientRole: role } });
+      if (url.pathname.endsWith('/auth/me'))
+        return route.fulfill({ json: { patientRole: role, telegramUserId: '123169226' } });
       if (url.pathname.endsWith('/cycles') && request.method() === 'GET')
         return route.fulfill({
           json: [{ id: 'cycle-role', startDate: '2026-11-15', status: 'active' }],
@@ -446,7 +448,8 @@ test('opens a past preparation in the shared analyses view with its own files an
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname.endsWith('/auth/me')) return route.fulfill({ json: { patientRole: 'wife' } });
+    if (url.pathname.endsWith('/auth/me'))
+      return route.fulfill({ json: { patientRole: 'wife', telegramUserId: '123169226' } });
     if (url.pathname.endsWith('/cycles') && request.method() === 'GET')
       return route.fulfill({
         json: [{ id: 'past-cycle', startDate: '2025-05-12', status: 'complete' }],

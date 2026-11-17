@@ -1,4 +1,5 @@
 import { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { afterAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { createHmac } from 'node:crypto';
 import { TelegramInitDataGuard } from './telegram-init-data.guard';
@@ -15,7 +16,7 @@ function signedInitData(userId: number, authDate = Math.floor(Date.now() / 1000)
 }
 
 describe('TelegramInitDataGuard', () => {
-  const guard = new TelegramInitDataGuard();
+  const guard = new TelegramInitDataGuard(new Reflector());
   const originalEnv = process.env;
 
   beforeEach(() => {
@@ -37,7 +38,11 @@ describe('TelegramInitDataGuard', () => {
   } {
     const request: Record<string, unknown> = { headers: { 'x-telegram-init-data': initData } };
     return {
-      execution: { switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext,
+      execution: {
+        getHandler: () => context,
+        getClass: () => TelegramInitDataGuard,
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as unknown as ExecutionContext,
       request: request as {
         headers: Record<string, string>;
         telegramUser?: { id: number };
@@ -89,6 +94,8 @@ describe('TelegramInitDataGuard', () => {
     process.env.LOCAL_TEST_USER_ROLE = 'husband';
     const request = { headers: { 'x-local-test-user-id': '123169226' } };
     const execution = {
+      getHandler: () => TelegramInitDataGuard.prototype.canActivate,
+      getClass: () => TelegramInitDataGuard,
       switchToHttp: () => ({ getRequest: () => request }),
     } as unknown as ExecutionContext;
 
@@ -102,6 +109,8 @@ describe('TelegramInitDataGuard', () => {
     process.env.LOCAL_TEST_USER_ROLE = 'wife';
     const request = { headers: { 'x-local-test-user-id': '123169226' } };
     const execution = {
+      getHandler: () => TelegramInitDataGuard.prototype.canActivate,
+      getClass: () => TelegramInitDataGuard,
       switchToHttp: () => ({ getRequest: () => request }),
     } as unknown as ExecutionContext;
 
@@ -114,6 +123,8 @@ describe('TelegramInitDataGuard', () => {
     process.env.LOCAL_TEST_USER_ROLE = 'wife';
     const request = { headers: { 'x-local-test-user-id': '123169227' } };
     const execution = {
+      getHandler: () => TelegramInitDataGuard.prototype.canActivate,
+      getClass: () => TelegramInitDataGuard,
       switchToHttp: () => ({ getRequest: () => request }),
     } as unknown as ExecutionContext;
 

@@ -29,3 +29,12 @@ describe('RecordsController download', () => {
     expect(response.redirect).not.toHaveBeenCalled();
   });
 });
+
+describe('RecordsController throttling metadata', () => {
+  it('limits uploads to 10/minute and interpretation to 5/minute', () => {
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', RecordsController.prototype.upload)).toBe(10);
+    expect(Reflect.getMetadata('THROTTLER:TTLdefault', RecordsController.prototype.upload)).toBe(60000);
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', RecordsController.prototype.interpret)).toBe(5);
+    expect(Reflect.getMetadata('THROTTLER:TTLdefault', RecordsController.prototype.interpret)).toBe(60000);
+  });
+});

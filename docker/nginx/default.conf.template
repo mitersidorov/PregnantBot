@@ -1,9 +1,14 @@
+map $http_x_telegram_init_data $local_test_user_id {
+    "" "${LOCAL_TEST_USER_ID}";
+    default "";
+}
+
 server {
     listen 80;
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
-    client_max_body_size 15m;
+    client_max_body_size 21m;
 
     location = /docs {
         return 301 /docs/;
@@ -17,7 +22,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Telegram-Init-Data $http_x_telegram_init_data;
-        proxy_set_header X-Local-Test-User-ID $http_x_local_test_user_id;
+        proxy_set_header X-Local-Test-User-ID $local_test_user_id;
         proxy_set_header X-API-KEY "${API_KEY}";
     }
 

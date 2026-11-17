@@ -8,5 +8,5 @@ RUN npm run build
 FROM nginx:1.27-alpine
 COPY --from=build /workspace/apps/webapp/dist/pregnantbot-webapp/browser /usr/share/nginx/html
 COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.template
-ENV NGINX_ENVSUBST_FILTER=API_KEY
+ENV NGINX_ENVSUBST_FILTER='API_KEY|LOCAL_TEST_USER_ID'
 EXPOSE 80

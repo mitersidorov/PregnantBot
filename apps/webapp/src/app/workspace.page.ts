@@ -108,356 +108,374 @@ const ALIASES: Record<string, string> = {
 @Component({
   selector: 'app-workspace-page',
   imports: [RouterLink, DatePipe],
-  template: ` <div class="content">
-    @if (section() === 'overview') {
-      @if (activeAttempt()) {
-        <section class="primary-action upload-panel">
-          @if (uploadPhase() === 'uploading' || uploadPhase() === 'processing') {
-            <div class="upload-loader" role="status">
-              <span class="spinner"></span>
-              <strong>{{
-                uploadPhase() === 'uploading' ? 'Загрузка анализа' : 'Обработка анализа'
-              }}</strong>
-            </div>
-          } @else if (uploadPhase() === 'review' && uploadProposal()) {
-            <div class="upload-review" [class.has-preview]="!!previewUrl()">
-              @if (previewUrl()) {
-                <div class="preview">
-                  <img
-                    [src]="previewUrl()!"
-                    [alt]="selectedFile()?.name || 'Предпросмотр анализа'"
+  template: ` <div class="content" [class.home-content]="section() === 'overview'">
+    @if (authStatus() === 'authorized') {
+      @if (section() === 'overview') {
+        <section class="home-hero" aria-label="Основное действие">
+          <img class="home-robot" src="/pregnant-robot.png" alt="Беременный робот" />
+          @if (activeAttempt()) {
+            <section class="primary-action upload-panel">
+              @if (uploadPhase() === 'uploading' || uploadPhase() === 'processing') {
+                <div class="upload-loader" role="status">
+                  <span class="spinner"></span>
+                  <strong>{{
+                    uploadPhase() === 'uploading' ? 'Загрузка анализа' : 'Обработка анализа'
+                  }}</strong>
+                </div>
+              } @else if (uploadPhase() === 'review' && uploadProposal()) {
+                <div class="upload-review" [class.has-preview]="!!previewUrl()">
+                  @if (previewUrl()) {
+                    <div class="preview">
+                      <img
+                        [src]="previewUrl()!"
+                        [alt]="selectedFile()?.name || 'Предпросмотр анализа'"
+                      />
+                    </div>
+                  }
+                  <div class="proposal">
+                    @if (selectedFile(); as file) {
+                      <p class="file-name">{{ file.name }}</p>
+                    }
+                    <section class="proposal-result">
+                      <h2>Результат обработки</h2>
+                      <strong>{{ uploadProposal()?.testName || 'Анализ не распознан' }}</strong>
+                      @if (uploadProposal()?.resultDate) {
+                        <p>Дата сдачи: {{ uploadProposal()?.resultDate | date: 'dd.MM.yyyy' }}</p>
+                      }
+                      @if (uploadProposal()?.summary) {
+                        <p>{{ uploadProposal()?.summary }}</p>
+                      }
+                      @if (uploadMatches().length) {
+                        <h3>Подходит к пунктам</h3>
+                        @for (option of uploadMatches(); track option.id) {
+                          <label class="match-option">
+                            <input
+                              type="checkbox"
+                              [checked]="selectedFor(uploadProposal()!.id).includes(option.id)"
+                              (change)="toggleUploadMatch(option.id)"
+                            />
+                            {{ option.name }} ·
+                            {{ applicabilityLabel(option.patientApplicability) }}
+                          </label>
+                        }
+                        @if (isUploadSpermogram()) {
+                          <fieldset>
+                            <legend>Оценка спермограммы</legend>
+                            <label
+                              ><input
+                                type="radio"
+                                name="upload-normality"
+                                (change)="setUploadNormality('normal')"
+                              />
+                              Норма</label
+                            >
+                            <label
+                              ><input
+                                type="radio"
+                                name="upload-normality"
+                                (change)="setUploadNormality('abnormal')"
+                              />
+                              Есть отклонения</label
+                            >
+                          </fieldset>
+                        }
+                      } @else {
+                        <p>Совпадение с чеклистом не найдено.</p>
+                      }
+                    </section>
+                    @if (uploadMatches().length) {
+                      <div class="review-actions">
+                        <button
+                          class="review-primary"
+                          type="button"
+                          [disabled]="busy() || !canConfirmUpload()"
+                          (click)="confirmUpload()"
+                        >
+                          Подтвердить
+                        </button>
+                        <button class="cancel-link" type="button" (click)="resetUpload()">
+                          Отмена
+                        </button>
+                      </div>
+                    } @else {
+                      <div class="review-actions">
+                        <button
+                          class="review-primary"
+                          type="button"
+                          [disabled]="!patientRole()"
+                          (click)="openAssignment(uploadProposal()!)"
+                        >
+                          Назначить
+                        </button>
+                        <button class="cancel-link" type="button" (click)="resetUpload()">
+                          Отмена
+                        </button>
+                      </div>
+                    }
+                  </div>
+                </div>
+              } @else {
+                <div class="form">
+                  <input
+                    id="file"
+                    class="file-input"
+                    type="file"
+                    [disabled]="!patientRole()"
+                    accept="application/pdf,image/jpeg,image/png"
+                    (change)="choose($event)"
                   />
+                  <label
+                    class="upload-select-button"
+                    [class.disabled]="!patientRole()"
+                    [attr.aria-disabled]="!patientRole()"
+                    for="file"
+                    >Загрузить анализ</label
+                  >
                 </div>
               }
-              <div class="proposal">
-                @if (selectedFile(); as file) {
-                  <p class="file-name">{{ file.name }}</p>
-                }
-                <section class="proposal-result">
-                  <h2>Результат обработки</h2>
-                  <strong>{{ uploadProposal()?.testName || 'Анализ не распознан' }}</strong>
-                  @if (uploadProposal()?.resultDate) {
-                    <p>Дата сдачи: {{ uploadProposal()?.resultDate | date: 'dd.MM.yyyy' }}</p>
-                  }
-                  @if (uploadProposal()?.summary) {
-                    <p>{{ uploadProposal()?.summary }}</p>
-                  }
-                  @if (uploadMatches().length) {
-                    <h3>Подходит к пунктам</h3>
-                    @for (option of uploadMatches(); track option.id) {
-                      <label class="match-option">
-                        <input
-                          type="checkbox"
-                          [checked]="selectedFor(uploadProposal()!.id).includes(option.id)"
-                          (change)="toggleUploadMatch(option.id)"
-                        />
-                        {{ option.name }} · {{ applicabilityLabel(option.patientApplicability) }}
-                      </label>
-                    }
-                    @if (isUploadSpermogram()) {
-                      <fieldset>
-                        <legend>Оценка спермограммы</legend>
-                        <label
-                          ><input
-                            type="radio"
-                            name="upload-normality"
-                            (change)="setUploadNormality('normal')"
-                          />
-                          Норма</label
-                        >
-                        <label
-                          ><input
-                            type="radio"
-                            name="upload-normality"
-                            (change)="setUploadNormality('abnormal')"
-                          />
-                          Есть отклонения</label
-                        >
-                      </fieldset>
-                    }
-                  } @else {
-                    <p>Совпадение с чеклистом не найдено.</p>
-                  }
-                </section>
-                @if (uploadMatches().length) {
-                  <div class="review-actions">
-                    <button
-                      class="review-primary"
-                      type="button"
-                      [disabled]="busy() || !canConfirmUpload()"
-                      (click)="confirmUpload()"
-                    >
-                      Подтвердить
-                    </button>
-                    <button class="cancel-link" type="button" (click)="resetUpload()">
-                      Отмена
-                    </button>
-                  </div>
-                } @else {
-                  <div class="review-actions">
-                    <button
-                      class="review-primary"
-                      type="button"
-                      [disabled]="!patientRole()"
-                      (click)="openAssignment(uploadProposal()!)"
-                    >
-                      Назначить
-                    </button>
-                    <button class="cancel-link" type="button" (click)="resetUpload()">
-                      Отмена
-                    </button>
-                  </div>
-                }
-              </div>
-            </div>
+            </section>
           } @else {
-            <div class="form">
-              <input
-                id="file"
-                class="file-input"
-                type="file"
-                [disabled]="!patientRole()"
-                accept="application/pdf,image/jpeg,image/png"
-                (change)="choose($event)"
-              />
-              <label
-                class="upload-select-button"
-                [class.disabled]="!patientRole()"
-                [attr.aria-disabled]="!patientRole()"
-                for="file"
-                >Загрузить анализ</label
-              >
-            </div>
+            <h1 class="overview-title">Начать подготовку к стимуляции</h1>
+            <section class="primary-action">
+              <button type="button" [disabled]="busy()" (click)="createCycle()">
+                Начать подготовку к стимуляции
+              </button>
+            </section>
           }
         </section>
-      } @else {
-        <h1 class="overview-title">Начать подготовку к стимуляции</h1>
-        <section class="primary-action">
-          <button type="button" [disabled]="busy()" (click)="createCycle()">
-            Начать подготовку к стимуляции
-          </button>
-        </section>
       }
-    }
-    @if (section() === 'cycles') {
-      <h1>Попытки</h1>
-      @if (cycles().length === 0 && !busy()) {
-        <p>Пока нет попыток</p>
-      }
-      <ul class="attempt-list">
-        @for (c of cycles(); track c.id) {
-          <li>
-            <a [routerLink]="['/cycles', c.id]">{{ c.startDate | date: 'mediumDate' }}</a>
-          </li>
+      @if (section() === 'cycles') {
+        <h1>Попытки</h1>
+        @if (cycles().length === 0 && !busy()) {
+          <p>Пока нет попыток</p>
         }
-      </ul>
-    }
-    @if (section() === 'cycle') {
-      <a class="back-link" routerLink="/records">← Все анализы</a>
-      @if (activeCycle(); as cycle) {
-        <p class="selected-attempt">Подготовка от {{ cycle.startDate | date: 'dd.MM.yyyy' }}</p>
-      }
-    }
-    @if (section() === 'records' || section() === 'cycle') {
-      <header class="records-header">
-        <h1>Все <em>анализы</em></h1>
-        <button class="secondary-button" type="button" (click)="openAttemptPicker()">
-          Выбрать подготовку
-        </button>
-      </header>
-      <div class="owner-tabs" role="group" aria-label="Чьи анализы показывать">
-        <button
-          type="button"
-          [attr.aria-pressed]="ownerFilter() === 'mine'"
-          (click)="ownerFilter.set('mine')"
-        >
-          Мои анализы
-        </button>
-        <button
-          type="button"
-          [attr.aria-pressed]="ownerFilter() === 'partner'"
-          (click)="ownerFilter.set('partner')"
-        >
-          Анализы партнёра
-        </button>
-      </div>
-      @if (requirementOptions().length > 0) {
-        <ul class="analysis-checklist">
-          @for (item of visibleRequirementOptions(); track item.id) {
+        <ul class="attempt-list">
+          @for (c of cycles(); track c.id) {
             <li>
-              <input
-                type="checkbox"
-                disabled
-                [checked]="resultsForRequirement(item.id).length > 0"
-                [attr.aria-label]="
-                  (resultsForRequirement(item.id).length
-                    ? 'Есть результат: '
-                    : 'Нет результата: ') + item.name
-                "
-              />
-              <button
-                class="analysis-title"
-                type="button"
-                [attr.aria-expanded]="isExpanded(item.id)"
-                (click)="toggleExpanded(item.id)"
-              >
-                <span class="analysis-title-copy">
-                  <span>{{ item.name }}</span>
-                  <small>{{ validityRequirementLabel(item.validityDays) }}</small>
-                </span>
-                @if (resultsForRequirement(item.id).length) {
-                  <span class="file-count">{{ resultsForRequirement(item.id).length }}</span>
-                }
-              </button>
+              <a [routerLink]="['/cycles', c.id]">{{ c.startDate | date: 'mediumDate' }}</a>
             </li>
-            @if (isExpanded(item.id)) {
-              @for (entry of resultsForRequirement(item.id); track entry.result.id) {
-                <li class="linked-result">
+          }
+        </ul>
+      }
+      @if (section() === 'cycle') {
+        <a class="back-link" routerLink="/records">← Все анализы</a>
+        @if (activeCycle(); as cycle) {
+          <p class="selected-attempt">Подготовка от {{ cycle.startDate | date: 'dd.MM.yyyy' }}</p>
+        }
+      }
+      @if (section() === 'records' || section() === 'cycle') {
+        <header class="records-header">
+          <h1>Все <em>анализы</em></h1>
+        </header>
+        <div class="owner-tabs" role="group" aria-label="Чьи анализы показывать">
+          <button
+            type="button"
+            [attr.aria-pressed]="ownerFilter() === 'mine'"
+            (click)="ownerFilter.set('mine')"
+          >
+            Мои анализы
+          </button>
+          <button
+            type="button"
+            [attr.aria-pressed]="ownerFilter() === 'partner'"
+            (click)="ownerFilter.set('partner')"
+          >
+            Анализы партнёра
+          </button>
+        </div>
+        @if (requirementOptions().length > 0) {
+          <ul class="analysis-checklist">
+            @for (item of visibleRequirementOptions(); track item.id) {
+              <li>
+                <input
+                  type="checkbox"
+                  disabled
+                  [checked]="resultsForRequirement(item.id).length > 0"
+                  [attr.aria-label]="
+                    (resultsForRequirement(item.id).length
+                      ? 'Есть результат: '
+                      : 'Нет результата: ') + item.name
+                  "
+                />
+                <button
+                  class="analysis-title"
+                  type="button"
+                  [attr.aria-expanded]="isExpanded(item.id)"
+                  (click)="toggleExpanded(item.id)"
+                >
+                  <span class="analysis-title-copy">
+                    <span>{{ item.name }}</span>
+                    <small>{{ validityRequirementLabel(item.validityDays) }}</small>
+                  </span>
+                  @if (resultsForRequirement(item.id).length) {
+                    <span
+                      class="file-count"
+                      [attr.aria-label]="
+                        'Прикреплено документов: ' + documentCountForRequirement(item.id)
+                      "
+                      >{{ documentCountForRequirement(item.id) }}</span
+                    >
+                  }
+                </button>
+              </li>
+              @if (isExpanded(item.id)) {
+                @for (entry of resultsForRequirement(item.id); track entry.result.id) {
+                  <li class="linked-result">
+                    <a
+                      href="#"
+                      [attr.aria-label]="'Скачать файл ' + entry.file.originalName"
+                      (click)="downloadFile($event, entry.file.id, entry.file.originalName)"
+                      >{{ entry.file.originalName }}</a
+                    >
+                    <small>
+                      Сдан
+                      {{ entry.result.resultDate || entry.file.uploadedAt | date: 'dd.MM.yyyy' }} ·
+                      {{ ownerLabel(entry.file) }} ·
+                      @if (validUntil(entry.result, item.id); as expiry) {
+                        годен до {{ expiry | date: 'dd.MM.yyyy' }}
+                      } @else {
+                        {{ validityNote(entry.result, item.id) }}
+                      }
+                    </small>
+                  </li>
+                }
+              }
+            }
+          </ul>
+        }
+        @if (unmatchedResults().length > 0) {
+          <section class="unmatched">
+            <h2>Не учтены</h2>
+            <ul class="records-list">
+              @for (entry of unmatchedResults(); track entry.result.id) {
+                <li class="unmatched-file">
                   <a
                     href="#"
                     [attr.aria-label]="'Скачать файл ' + entry.file.originalName"
                     (click)="downloadFile($event, entry.file.id, entry.file.originalName)"
                     >{{ entry.file.originalName }}</a
                   >
-                  <small>
-                    Сдан
-                    {{ entry.result.resultDate || entry.file.uploadedAt | date: 'dd.MM.yyyy' }} ·
-                    {{ ownerLabel(entry.file) }} ·
-                    @if (validUntil(entry.result, item.id); as expiry) {
-                      годен до {{ expiry | date: 'dd.MM.yyyy' }}
-                    } @else {
-                      {{ validityNote(entry.result, item.id) }}
-                    }
-                  </small>
+                  @if (canManage(entry.file)) {
+                    <button
+                      class="secondary-button assign-button"
+                      type="button"
+                      [disabled]="!patientRole()"
+                      (click)="openAssignment(entry.result, entry.file.uploadedBy)"
+                    >
+                      Назначить
+                    </button>
+                  }
                 </li>
               }
-            }
-          }
-        </ul>
-      }
-      @if (unmatchedResults().length > 0) {
-        <section class="unmatched">
-          <h2>Не учтены</h2>
-          <ul class="records-list">
-            @for (entry of unmatchedResults(); track entry.result.id) {
-              <li class="unmatched-file">
-                <a
-                  href="#"
-                  [attr.aria-label]="'Скачать файл ' + entry.file.originalName"
-                  (click)="downloadFile($event, entry.file.id, entry.file.originalName)"
-                  >{{ entry.file.originalName }}</a
-                >
-                @if (canManage(entry.file)) {
-                  <button
-                    class="assign-button"
-                    type="button"
-                    [disabled]="!patientRole()"
-                    (click)="openAssignment(entry.result, entry.file.uploadedBy)"
-                  >
-                    Назначить
-                  </button>
-                }
-              </li>
-            }
-          </ul>
-        </section>
-      }
-    }
-    @if (modal() === 'attempts') {
-      <div class="modal-backdrop" (click)="closeModal()">
-        <section
-          class="modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="attempt-modal-title"
-          (click)="$event.stopPropagation()"
-        >
-          <button class="modal-close" type="button" aria-label="Закрыть" (click)="closeModal()">
-            ×
-          </button>
-          <h2 id="attempt-modal-title">Выбрать подготовку</h2>
-          @for (cycle of cycles(); track cycle.id) {
-            <button class="modal-option" type="button" (click)="openAttempt(cycle)">
-              {{ cycle.startDate | date: 'dd.MM.yyyy' }}
-            </button>
-          }
-          <button type="button" [disabled]="busy()" (click)="createCycle()">
-            Начать новую подготовку
+            </ul>
+          </section>
+        }
+        <section class="records-footer" aria-labelledby="preparation-title">
+          <h2 id="preparation-title">Подготовка</h2>
+          <p>Выберите подготовку, чтобы открыть её список обследований.</p>
+          <button class="primary-button" type="button" (click)="openAttemptPicker()">
+            Выбрать подготовку
           </button>
         </section>
-      </div>
-    }
-    @if (modal() === 'assignment') {
-      <div class="modal-backdrop" (click)="closeModal()">
-        <section
-          class="modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="assign-modal-title"
-          (click)="$event.stopPropagation()"
-        >
-          <button class="modal-close" type="button" aria-label="Закрыть" (click)="closeModal()">
-            ×
-          </button>
-          <h2 id="assign-modal-title">Назначить анализ</h2>
-          @if (assignmentPhase() === 'processing') {
-            <div class="assignment-loader" role="status">
-              <span class="spinner"></span>
-              <strong>Обработка анализа</strong>
-            </div>
-          } @else if (assignmentPhase() === 'error') {
-            <button type="button" [disabled]="busy()" (click)="retryAssignmentInterpretation()">
-              Повторить обработку
+      }
+      @if (modal() === 'attempts') {
+        <div class="modal-backdrop" (click)="closeModal()">
+          <section
+            class="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="attempt-modal-title"
+            (click)="$event.stopPropagation()"
+          >
+            <button class="modal-close" type="button" aria-label="Закрыть" (click)="closeModal()">
+              ×
             </button>
-          } @else if (assignmentResult(); as result) {
-            <section class="assignment-result">
-              <h3>Результат обработки</h3>
-              <strong>{{ result.testName || 'Анализ не распознан' }}</strong>
-              @if (result.resultDate) {
-                <p>Дата сдачи: {{ result.resultDate | date: 'dd.MM.yyyy' }}</p>
-              }
-              @if (result.summary) {
-                <p>{{ result.summary }}</p>
-              }
-            </section>
-            <h3>Выберите обследование</h3>
-            @for (option of assignmentOptions(); track option.id) {
-              <button
-                class="modal-option"
-                type="button"
-                [class.selected]="assignmentRequirementId() === option.id"
-                (click)="assignmentRequirementId.set(option.id)"
-              >
-                {{ option.name }}
+            <h2 id="attempt-modal-title">Выбрать подготовку</h2>
+            @for (cycle of cycles(); track cycle.id) {
+              <button class="modal-option" type="button" (click)="openAttempt(cycle)">
+                {{ cycle.startDate | date: 'dd.MM.yyyy' }}
               </button>
             }
-            @if (isAssignmentSpermogram()) {
-              <fieldset>
-                <legend>Результат спермограммы</legend>
-                <label
-                  ><input
-                    type="radio"
-                    name="assignment-normality"
-                    (change)="assignmentNormality.set('normal')"
-                  />
-                  Норма</label
-                >
-                <label
-                  ><input
-                    type="radio"
-                    name="assignment-normality"
-                    (change)="assignmentNormality.set('abnormal')"
-                  />
-                  Есть отклонения</label
-                >
-              </fieldset>
-            }
-            <button type="button" [disabled]="busy() || !canAssign()" (click)="assignSelected()">
-              Назначить
+            <button type="button" [disabled]="busy()" (click)="createCycle()">
+              Начать новую подготовку
             </button>
-          }
-        </section>
-      </div>
+          </section>
+        </div>
+      }
+      @if (modal() === 'assignment') {
+        <div class="modal-backdrop" (click)="closeModal()">
+          <section
+            class="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="assign-modal-title"
+            (click)="$event.stopPropagation()"
+          >
+            <button class="modal-close" type="button" aria-label="Закрыть" (click)="closeModal()">
+              ×
+            </button>
+            <h2 id="assign-modal-title">Назначить анализ</h2>
+            @if (assignmentPhase() === 'processing') {
+              <div class="assignment-loader" role="status">
+                <span class="spinner"></span>
+                <strong>Обработка анализа</strong>
+              </div>
+            } @else if (assignmentPhase() === 'error') {
+              <button type="button" [disabled]="busy()" (click)="retryAssignmentInterpretation()">
+                Повторить обработку
+              </button>
+            } @else if (assignmentResult(); as result) {
+              <section class="assignment-result">
+                <h3>Результат обработки</h3>
+                <strong>{{ result.testName || 'Анализ не распознан' }}</strong>
+                @if (result.resultDate) {
+                  <p>Дата сдачи: {{ result.resultDate | date: 'dd.MM.yyyy' }}</p>
+                }
+                @if (result.summary) {
+                  <p>{{ result.summary }}</p>
+                }
+              </section>
+              <h3>Выберите обследование</h3>
+              @for (option of assignmentOptions(); track option.id) {
+                <button
+                  class="modal-option"
+                  type="button"
+                  [class.selected]="assignmentRequirementId() === option.id"
+                  (click)="assignmentRequirementId.set(option.id)"
+                >
+                  {{ option.name }}
+                </button>
+              }
+              @if (isAssignmentSpermogram()) {
+                <fieldset>
+                  <legend>Результат спермограммы</legend>
+                  <label
+                    ><input
+                      type="radio"
+                      name="assignment-normality"
+                      (change)="assignmentNormality.set('normal')"
+                    />
+                    Норма</label
+                  >
+                  <label
+                    ><input
+                      type="radio"
+                      name="assignment-normality"
+                      (change)="assignmentNormality.set('abnormal')"
+                    />
+                    Есть отклонения</label
+                  >
+                </fieldset>
+              }
+              <button type="button" [disabled]="busy() || !canAssign()" (click)="assignSelected()">
+                Назначить
+              </button>
+            }
+          </section>
+        </div>
+      }
+    } @else {
+      <p class="access-state" role="status">{{ accessMessage() }}</p>
     }
     @if (error() || message()) {
       <div
@@ -483,6 +501,35 @@ const ALIASES: Record<string, string> = {
         padding: 46px clamp(18px, 5vw, 65px);
         overflow-wrap: anywhere;
       }
+      .access-state {
+        min-height: 40vh;
+        display: grid;
+        place-items: center;
+        margin: 0;
+        color: #77827d;
+        text-align: center;
+      }
+      .content.home-content {
+        width: 100%;
+        max-width: none;
+        min-height: 100dvh;
+        margin: 0;
+        padding: 0 0 var(--bottom-nav-height, 0px);
+        box-sizing: border-box;
+        display: flex;
+      }
+      .home-hero {
+        width: 100%;
+        min-height: calc(100dvh - var(--bottom-nav-height, 0px));
+        margin: auto;
+        padding: 20px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+      }
       h1 {
         font: clamp(30px, 4vw, 40px)/1.15 Georgia;
         color: #293a34;
@@ -491,14 +538,24 @@ const ALIASES: Record<string, string> = {
       .overview-title {
         text-align: center;
       }
+      .home-robot {
+        display: block;
+        width: min(340px, 78vw);
+        height: clamp(280px, 42dvh, 390px);
+        object-fit: contain;
+        margin: 0;
+      }
       h1 em {
         color: #719082;
       }
       .primary-action {
         margin-top: 24px;
       }
+      .home-hero .primary-action {
+        margin: 0;
+      }
       .upload-panel {
-        min-height: 65vh;
+        min-height: 0;
         display: grid;
         place-items: center;
       }
@@ -671,9 +728,28 @@ const ALIASES: Record<string, string> = {
       }
       .records-header {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start;
         align-items: center;
         gap: 16px;
+      }
+      .records-footer {
+        display: grid;
+        justify-items: start;
+        margin: 36px 0 8px;
+        gap: 8px;
+      }
+      .records-footer h2,
+      .records-footer p {
+        margin: 0;
+      }
+      .records-footer h2 {
+        font-size: 20px;
+        font-weight: 500;
+      }
+      .records-footer p {
+        color: #77827d;
+        font-size: 14px;
+        line-height: 1.45;
       }
       .secondary-button {
         background: transparent;
@@ -723,7 +799,18 @@ const ALIASES: Record<string, string> = {
         flex-wrap: wrap;
         gap: 8px 12px;
         padding: 12px 0;
-        border-bottom: 1px solid #e8ece7;
+        border: 0;
+      }
+      .analysis-checklist,
+      .analysis-checklist li,
+      .analysis-title,
+      .linked-result,
+      .linked-result small,
+      .unmatched,
+      .unmatched-file,
+      .records-list,
+      .records-list > li {
+        text-align: left;
       }
       a {
         color: #527365;
@@ -738,7 +825,7 @@ const ALIASES: Record<string, string> = {
         align-items: center;
         gap: 12px;
         padding: 11px 0;
-        border-bottom: 1px solid #e8ece7;
+        border: 0;
       }
       .analysis-title {
         display: flex;
@@ -760,10 +847,24 @@ const ALIASES: Record<string, string> = {
         color: #77827d;
         font-size: 12px;
         font-weight: 400;
+        margin: 0;
+      }
+      .linked-result small,
+      .unmatched small {
+        margin: 0;
       }
       .file-count {
-        color: #77827d;
+        min-width: 26px;
+        height: 26px;
+        padding: 0 7px;
+        box-sizing: border-box;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 999px;
+        background: #e2eee7;
+        color: #355f4c;
         font-size: 13px;
+        font-weight: 700;
       }
       .analysis-checklist li.linked-result {
         display: grid;
@@ -792,7 +893,8 @@ const ALIASES: Record<string, string> = {
         display: flex;
         align-items: center;
         gap: 12px;
-        border-bottom: 1px solid #e8ece7;
+        padding: 12px 0;
+        border: 0;
       }
       .unmatched-file a {
         flex: 1;
@@ -801,6 +903,19 @@ const ALIASES: Record<string, string> = {
         min-height: 34px;
         padding: 6px 10px;
         font-size: 13px;
+        color: #527365;
+        background: transparent;
+        border: 1px solid #b9c9c0;
+        border-radius: 6px;
+      }
+      .primary-button {
+        min-height: 44px;
+        padding: 10px 14px;
+        color: #fff;
+        background: #527365;
+        border: 0;
+        border-radius: 6px;
+        font-weight: 600;
       }
       .modal-backdrop {
         position: fixed;
@@ -1034,6 +1149,8 @@ export class WorkspacePage implements OnInit {
   private readonly telegram = inject(TelegramApiService);
   readonly api = this.apiService;
   readonly section = signal('overview');
+  readonly authStatus = signal<'checking' | 'authorized' | 'denied'>('checking');
+  readonly accessMessage = signal('Проверка доступа…');
   readonly cycles = signal<Cycle[]>([]);
   readonly records = signal<RecordFile[]>([]);
   readonly patientRole = signal<PatientRole | undefined>(undefined);
@@ -1068,35 +1185,76 @@ export class WorkspacePage implements OnInit {
   readonly error = signal('');
   readonly message = signal('');
   private toastTimeout?: ReturnType<typeof setTimeout>;
+  private routeDataReady = false;
   readonly selectedFile = signal<File | undefined>(undefined);
   readonly ALIASES = ALIASES;
   ngOnInit() {
+    this.navigationState.setAuthenticated(false);
+    this.authStatus.set('checking');
     this.api.currentUser().subscribe({
-      next: ({ patientRole }) => {
-        if (patientRole === 'wife' || patientRole === 'husband') {
+      next: ({ patientRole, telegramUserId }) => {
+        if (
+          (patientRole === 'wife' || patientRole === 'husband') &&
+          typeof telegramUserId === 'string' &&
+          telegramUserId.length > 0
+        ) {
           this.patientRole.set(patientRole);
+          this.telegram.setAuthenticatedUserId(telegramUserId);
+          this.navigationState.setAuthenticated(true);
+          this.authStatus.set('authorized');
+          this.loadCurrentRouteData();
         } else {
-          this.showToast('Не удалось определить роль пользователя. Обновите страницу.', 'error');
+          this.denyIdentity('Нет доступа к приложению.');
         }
       },
-      error: (error) => this.fail(error),
+      error: (error) =>
+        this.denyIdentity(
+          this.isAuthorizationFailure(error)
+            ? 'Нет доступа к приложению.'
+            : 'Не удалось проверить доступ. Обновите страницу.',
+        ),
     });
     this.route.data.subscribe((d) => {
       this.section.set(String(d['section'] ?? 'overview'));
-      if (this.section() === 'overview' || this.section() === 'cycles') {
-        this.loadCycles();
-        this.loadNavigationRecords();
-        this.loadRequirementOptions();
-      }
-      if (this.section() === 'records') {
-        this.loadRecords();
-      }
-      if (this.section() === 'cycle') {
-        this.loadCycles();
-        const id = this.route.snapshot.paramMap.get('id');
-        if (id) this.loadRecords(id);
-      }
+      this.routeDataReady = true;
+      this.loadCurrentRouteData();
     });
+  }
+  private loadCurrentRouteData(): void {
+    if (!this.routeDataReady || !this.navigationState.isAuthenticated()) return;
+    if (this.section() === 'overview' || this.section() === 'cycles') {
+      this.loadCycles();
+      this.loadNavigationRecords();
+      this.loadRequirementOptions();
+      return;
+    }
+    if (this.section() === 'records') {
+      this.loadRecords();
+      return;
+    }
+    if (this.section() === 'cycle') {
+      this.loadCycles();
+      const id = this.route.snapshot.paramMap.get('id');
+      if (id) this.loadRecords(id);
+    }
+  }
+  private denyIdentity(message: string): void {
+    this.authStatus.set('denied');
+    this.accessMessage.set(message);
+    this.patientRole.set(undefined);
+    this.telegram.clearAuthenticatedUserId();
+    this.navigationState.setAuthenticated(false);
+    this.busy.set(false);
+    this.modal.set(null);
+    this.cycles.set([]);
+    this.records.set([]);
+    this.activeCycle.set(undefined);
+    this.requirementOptions.set([]);
+    this.selectedRequirements.set({});
+    this.assignmentResult.set(undefined);
+    this.uploadProposal.set(undefined);
+    this.error.set('');
+    this.message.set('');
   }
   activeAttempt(): Cycle | undefined {
     return this.cycles().find((c) => c.status === 'active');
@@ -1193,11 +1351,20 @@ export class WorkspacePage implements OnInit {
   }
   private fail(e: unknown) {
     this.busy.set(false);
+    if (this.isAuthorizationFailure(e)) {
+      this.denyIdentity('Доступ не разрешён. Проверьте аккаунт Telegram.');
+      return;
+    }
     const text =
       e instanceof Error
         ? this.translateError(e.message)
         : 'Не удалось выполнить запрос. Попробуйте ещё раз.';
     this.showToast(text, 'error');
+  }
+  private isAuthorizationFailure(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('status' in error)) return false;
+    const status = (error as { status?: unknown }).status;
+    return status === 401 || status === 403;
   }
   private translateError(s: string): string {
     const m = s.match(/status\s+(\d{3})/i);
@@ -1328,6 +1495,9 @@ export class WorkspacePage implements OnInit {
           .map((result) => ({ file, result })),
       )
       .sort((a, b) => (b.result.resultDate ?? '').localeCompare(a.result.resultDate ?? ''));
+  }
+  documentCountForRequirement(requirementId: string): number {
+    return new Set(this.resultsForRequirement(requirementId).map(({ file }) => file.id)).size;
   }
   ownerLabel(file: RecordFile): string {
     const currentUserId = this.telegram.currentUserId();

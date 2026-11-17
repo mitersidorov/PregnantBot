@@ -62,6 +62,8 @@ services:
       TELEGRAM_BOT_TOKEN: 123456789:test-token-for-local-e2e-only
       TELEGRAM_WIFE_USER_ID: '111111111'
       TELEGRAM_HUSBAND_USER_ID: '222222222'
+      TELEGRAM_WEBHOOK_URL: ''
+      TELEGRAM_WEBHOOK_SECRET: ''
       LOCAL_TEST_USER_ID: '123169226'
       LOCAL_TEST_USER_ROLE: husband
       TELEGRAM_API_BASE_URL: http://telegram-stub:8080
@@ -93,6 +95,7 @@ services:
       dockerfile: docker/webapp.Dockerfile
     environment:
       API_KEY: local-test-api-key
+      LOCAL_TEST_USER_ID: '123169226'
     depends_on:
       backend:
         condition: service_healthy
