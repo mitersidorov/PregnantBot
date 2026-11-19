@@ -268,7 +268,6 @@ type RequirementOption = {
               }
             </section>
           } @else {
-            <h1 class="overview-title">Начать подготовку к стимуляции</h1>
             <section class="primary-action">
               <button type="button" [disabled]="busy()" (click)="createCycle()">
                 Начать подготовку к стимуляции
@@ -543,12 +542,16 @@ type RequirementOption = {
           </section>
         </div>
       }
+    } @else if (authStatus() === 'checking') {
+      <div class="auth-loader" role="status" aria-label="Проверка доступа">
+        <span class="spinner"></span>
+      </div>
     } @else {
       <div class="access-state">
         <button type="button" (click)="retryAuthorization()">Повторить</button>
       </div>
     }
-    @if (error() || message()) {
+    @if (authStatus() === 'authorized' && (error() || message())) {
       <div
         class="toast"
         [class.toast-error]="!!error()"
@@ -559,7 +562,7 @@ type RequirementOption = {
         {{ error() || message() }}
       </div>
     }
-    @if (busy() && uploadPhase() === 'form') {
+    @if (authStatus() === 'authorized' && busy() && uploadPhase() === 'form') {
       <p role="status">Загрузка…</p>
     }
   </div>`,
@@ -571,6 +574,14 @@ type RequirementOption = {
         margin: auto;
         padding: 46px clamp(18px, 5vw, 65px);
         overflow-wrap: anywhere;
+      }
+      .auth-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        background: #fff;
       }
       .access-state {
         min-height: 40vh;
@@ -1475,6 +1486,18 @@ export class WorkspacePage implements OnInit {
     if (status && Number(status) >= 500) return 'Сервис временно недоступен. Попробуйте позже.';
     return 'Не удалось выполнить запрос. Попробуйте ещё раз.';
   }
+  private translateInterpretationError(error: unknown): string {
+    if (typeof error === 'object' && error !== null && 'error' in error) {
+      const response = (error as { error?: { errorCode?: unknown } }).error;
+      if (response?.errorCode === 'INTERPRETATION_RETRYABLE')
+        return 'Не удалось распознать документ. Проверьте файл и попробуйте обработать его ещё раз.';
+      if (response?.errorCode === 'INTERPRETATION_INVALID_OUTPUT')
+        return 'Не удалось проверить результат распознавания. Попробуйте ещё раз.';
+    }
+    return error instanceof Error
+      ? this.translateError(error.message)
+      : 'Не удалось обработать анализ. Попробуйте ещё раз.';
+  }
   loadCycles() {
     this.busy.set(true);
     this.api.cycles().subscribe({
@@ -1698,11 +1721,7 @@ export class WorkspacePage implements OnInit {
       error: (error) => {
         this.busy.set(false);
         if (this.modal() !== 'assignment' || this.assignmentResult()?.id !== result.id) return;
-        this.assignmentError.set(
-          error instanceof Error
-            ? this.translateError(error.message)
-            : 'Не удалось обработать анализ. Попробуйте ещё раз.',
-        );
+        this.assignmentError.set(this.translateInterpretationError(error));
         this.showToast(this.assignmentError(), 'error');
         this.assignmentPhase.set('error');
       },

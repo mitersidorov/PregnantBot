@@ -61,8 +61,10 @@ export class S3StorageService {
         }),
       );
       this.logger.info('File uploaded to S3');
-    } catch {
-      this.logger.error('S3 upload failed');
+    } catch (error) {
+      const e = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown; requestId?: unknown; extendedRequestId?: unknown; attempts?: unknown; totalRetryDelay?: unknown }; Code?: unknown };
+      const safe = (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(v) ? v : undefined;
+      this.logger.error('S3 upload failed', { errorName: safe(e?.name), errorCode: safe(e?.Code), status: typeof e?.$metadata?.httpStatusCode === 'number' ? e.$metadata.httpStatusCode : undefined, requestId: safe(e?.$metadata?.requestId), extendedRequestId: safe(e?.$metadata?.extendedRequestId), attempts: typeof e?.$metadata?.attempts === 'number' ? e.$metadata.attempts : undefined, totalRetryDelay: typeof e?.$metadata?.totalRetryDelay === 'number' ? e.$metadata.totalRetryDelay : undefined });
       throw new InternalServerErrorException({ message: 'S3 storage operation failed.', errorCode: 'S3_ERROR' });
     }
   }

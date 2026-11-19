@@ -2,6 +2,7 @@ import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } 
 import { createHash } from 'node:crypto';
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
+import { safeOpenAIErrorDiagnostics } from './openai-diagnostics';
 import { z } from 'zod';
 import type { ExtractedFinding } from '../types/extracted-finding.interface';
 
@@ -124,6 +125,7 @@ export class InterpretationService {
         purpose: 'user_data',
       });
       fileId = uploaded.id;
+      this.logger.log(JSON.stringify({ event: 'interpretation_input_file', fileRef: hashText(fileId).slice(0, 12), extension: fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8), applicationMime: contentType, bytes: bytes.length, inputType: 'input_file', detail: contentType === 'application/pdf' ? 'high' : null }));
       const prompt = extractionInstructionsFor(requirements);
       const schema = {
         type: 'object',
@@ -277,10 +279,17 @@ export class InterpretationService {
     } catch (error) {
       if (error instanceof ServiceUnavailableException || error instanceof BadGatewayException) throw error;
       const providerError = error instanceof OpenAI.APIError ? error : undefined;
+      if (providerError) this.logger.warn(JSON.stringify({ event: 'openai_response_error', ...safeOpenAIErrorDiagnostics(providerError) }));
+      const safeProviderError = providerError?.error && typeof providerError.error === 'object'
+        ? providerError.error as Record<string, unknown>
+        : undefined;
       this.logFailure(stage, {
         providerRequestId: providerError?.requestID ?? providerRequestId,
         providerStatus: providerError?.status,
-        providerCode: providerError?.code,
+        providerErrorType: this.safeDiagnosticValue(safeProviderError?.type),
+        providerErrorCode: this.safeDiagnosticValue(safeProviderError?.code ?? providerError?.code),
+        providerErrorParam: this.safeDiagnosticValue(safeProviderError?.param),
+        providerDeveloperMessage: this.redactProviderMessage(safeProviderError?.message),
       });
       throw new ServiceUnavailableException({
         message: 'The document could not be interpreted. Please try again.',
@@ -295,6 +304,18 @@ export class InterpretationService {
   }
   private logFailure(stage: string, details: Record<string, unknown>): void {
     this.logger.warn(JSON.stringify({ event: 'interpretation_failed', stage, model: this.model, ...details }));
+  }
+  private safeDiagnosticValue(value: unknown): string | undefined {
+    return typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,120}$/.test(value) ? value : undefined;
+  }
+  private redactProviderMessage(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    return value
+      .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+      .replace(/sk-[A-Za-z0-9_-]+/g, '[REDACTED_KEY]')
+      .replace(/\b\d{7,}:\S+/g, '[REDACTED_TOKEN]')
+      .replace(/https?:\/\/[^\s?]+\?[^\s]+/gi, '[REDACTED_URL]')
+      .slice(0, 500);
   }
   private logResponse(details: Record<string, unknown>): void {
     this.logger.log(JSON.stringify({ event: 'interpretation_response', model: this.model, ...details }));
