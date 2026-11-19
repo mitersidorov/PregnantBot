@@ -10,6 +10,19 @@ const completedResponse = (output_text: string, extras: Record<string, unknown> 
 });
 
 describe('InterpretationService', () => {
+  it('defaults to the validated multilingual PDF model while allowing an explicit override', () => {
+    const previous = process.env.OPENAI_MODEL;
+    delete process.env.OPENAI_MODEL;
+    try {
+      expect(new InterpretationService().modelName).toBe('gpt-6.2-sol');
+      process.env.OPENAI_MODEL = 'custom-model';
+      expect(new InterpretationService().modelName).toBe('custom-model');
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_MODEL;
+      else process.env.OPENAI_MODEL = previous;
+    }
+  });
+
   it('validates the provider JSON again with Zod', async () => {
     const service = new InterpretationService();
     (service as unknown as { client: unknown }).client = {
@@ -192,8 +205,72 @@ describe('InterpretationService', () => {
     expect(EXTRACTION_INSTRUCTIONS).toContain('грузинские названия медицинских исследований');
     expect(EXTRACTION_INSTRUCTIONS).toContain('Не теряй исходные аббревиатуры и коды');
     expect(extractionInstructionsFor([{ id: 'wife-cbc', name: 'Complete blood count (CBC)' }])).toContain(
-      'только когда исследование явно соответствует этому пункту',
+      'используй точное имя пункта checklist и только его ID',
     );
+  });
+
+  it('keeps explicit combined-PCR targets separate and requires the document legend to interpret symbols', async () => {
+    const providerOutput = {
+      findings: [
+        {
+          testName: 'Chlamydia trachomatis',
+          resultDate: null,
+          summary: 'Отрицательно (— по легенде: не обнаружено).',
+          pageNumber: 1,
+          requirementIds: [],
+        },
+        {
+          testName: 'Neisseria gonorrhoeae',
+          resultDate: null,
+          summary: 'Отрицательно (— по легенде: не обнаружено).',
+          pageNumber: 1,
+          requirementIds: [],
+        },
+        {
+          testName: 'Trichomonas vaginalis',
+          resultDate: null,
+          summary: 'Отрицательно (— по легенде: не обнаружено).',
+          pageNumber: 1,
+          requirementIds: [],
+        },
+      ],
+    };
+    const service = new InterpretationService();
+    (service as unknown as { client: unknown }).client = {
+      files: {
+        create: jest.fn(async () => ({ id: 'provider-file' })),
+        delete: jest.fn(async () => undefined),
+      },
+      responses: { create: jest.fn(async () => completedResponse(JSON.stringify(providerOutput))) },
+    };
+
+    const result = await service.proposeFile(
+      Buffer.from('synthetic combined PCR panel'),
+      'panel.pdf',
+      'application/pdf',
+      [
+        { id: 'cervical-chlamydia', name: 'C. trachomatis cervical PCR' },
+        { id: 'cervical-gonorrhea', name: 'N. gonorrhoeae cervical PCR' },
+        { id: 'cervical-trichomonas', name: 'T. vaginalis cervical PCR' },
+      ],
+    );
+    expect(result.findings).toHaveLength(3);
+    expect(result.findings.map((finding) => finding.testName)).toEqual([
+      'Chlamydia trachomatis',
+      'Neisseria gonorrhoeae',
+      'Trichomonas vaginalis',
+    ]);
+    expect(result.findings.every((finding) => finding.requirementIds?.length === 0)).toBe(true);
+    expect(EXTRACTION_INSTRUCTIONS).toContain('каждой явно напечатанной строки-мишени');
+    expect(EXTRACTION_INSTRUCTIONS).toContain('проверь символ результата и легенду документа');
+    expect(EXTRACTION_INSTRUCTIONS).toContain('напиши «не обнаружено (—)»');
+    expect(EXTRACTION_INSTRUCTIONS).toContain(
+      'только если эта мишень сама является тестом/target из checklist текущего пользователя',
+    );
+    expect(EXTRACTION_INSTRUCTIONS).toContain('Не превращай остальные строки микробиотического состава');
+    expect(EXTRACTION_INSTRUCTIONS).toContain('само выражение «урогенитальная панель» не доказывает');
+    expect(EXTRACTION_INSTRUCTIONS).toContain('точным переводом или стандартным сокращением того же анализа');
+    expect(EXTRACTION_INSTRUCTIONS).toContain('anti-HIV antibody не равен Combined HIV Ag/Ab + P24');
   });
 
   it('accepts a valid empty findings array as a successful extraction', async () => {
