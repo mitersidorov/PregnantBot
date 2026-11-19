@@ -116,7 +116,10 @@ test('renders the API checklist by role and preserves IDs in assignment confirma
       interpretationCalls += 1;
       if (interpretationCalls === 1) {
         await firstInterpretationGate;
-        return route.fulfill({ status: 503, json: { message: 'temporary error' } });
+        return route.fulfill({
+          status: 503,
+          json: { message: 'The document could not be interpreted. Please try again.', errorCode: 'INTERPRETATION_RETRYABLE' },
+        });
       }
       await retryInterpretationGate;
       return route.fulfill({
@@ -181,6 +184,7 @@ test('renders the API checklist by role and preserves IDs in assignment confirma
   expect(interpretationCalls).toBe(1);
   releaseFirstInterpretation();
   await expect(page.locator('.toast-error')).toBeVisible();
+  await expect(page.locator('.toast-error')).toContainText('Не удалось распознать документ');
   expect(confirmCalls).toBe(0);
   const retryRequest = page.waitForRequest((request) => request.url().includes('/interpret'));
   await assignment.getByRole('button', { name: 'Повторить обработку' }).click();

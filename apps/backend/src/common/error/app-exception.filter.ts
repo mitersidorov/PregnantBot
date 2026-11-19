@@ -10,6 +10,8 @@ function statusToCode(status: number): string {
     409: 'CONFLICT',
     422: 'UNPROCESSABLE_ENTITY',
     429: 'RATE_LIMITED',
+    502: 'BAD_GATEWAY',
+    503: 'SERVICE_UNAVAILABLE',
     500: 'INTERNAL_ERROR',
   };
   return map[status] ?? 'UNKNOWN_ERROR';
@@ -32,7 +34,7 @@ export class AppExceptionFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
-      if (status < 500) {
+      if (status < 500 || this.isSafeInterpretationError(res)) {
         if (typeof res === 'string') {
           message = res;
         } else {
@@ -49,13 +51,10 @@ export class AppExceptionFilter implements ExceptionFilter {
         errorCode = statusToCode(status);
       }
       if (status >= 500) {
-        this.logger.error(`${request.method} ${path} → ${status}`, (exception as Error).stack);
+        this.logger.error(`${request.method} ${path} → ${status} code=${errorCode ?? 'INTERNAL_ERROR'}`);
       }
     } else {
-      this.logger.error(
-        `Unhandled exception on ${request.method} ${path}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
+      this.logger.error(`Unhandled exception on ${request.method} ${path} type=${exceptionType(exception)}`);
     }
 
     response.status(status).json({
@@ -65,4 +64,17 @@ export class AppExceptionFilter implements ExceptionFilter {
       ...(errorCode !== undefined && { errorCode }),
     });
   }
+
+  private isSafeInterpretationError(response: string | object): boolean {
+    if (typeof response !== 'object' || response === null) return false;
+    const body = response as { errorCode?: unknown; message?: unknown };
+    return (
+      typeof body.message === 'string' &&
+      ['INTERPRETATION_RETRYABLE', 'INTERPRETATION_INVALID_OUTPUT'].includes(String(body.errorCode))
+    );
+  }
+}
+
+function exceptionType(exception: unknown): string {
+  return exception instanceof Error ? exception.name : typeof exception;
 }

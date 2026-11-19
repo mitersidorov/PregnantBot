@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
   PayloadTooLargeException,
-  UnsupportedMediaTypeException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
@@ -25,6 +25,7 @@ import type { ChecklistMatchedFinding, ExtractedFinding } from '../types/extract
 
 @Injectable()
 export class RecordsService {
+  private readonly logger = new Logger(RecordsService.name);
   constructor(
     @InjectRepository(MedicalFile) private readonly files: Repository<MedicalFile>,
     @InjectRepository(MedicalResult) private readonly results: Repository<MedicalResult>,
@@ -37,12 +38,9 @@ export class RecordsService {
   async upload(file: UploadedMedicalFile, userId: number): Promise<{ file: MedicalFile; result: MedicalResult }> {
     if (!file || file.size > 20 * 1024 * 1024)
       throw new PayloadTooLargeException('File is required and must be at most 20 MB');
-    if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.mimetype))
-      throw new UnsupportedMediaTypeException('Only PDF, JPEG, and PNG files are accepted');
-    if (!this.matchesContentType(file.buffer, file.mimetype))
-      throw new UnsupportedMediaTypeException('File content does not match its declared media type');
     const id = randomUUID();
     const key = `medical/${id}`;
+    this.logger.log(JSON.stringify({ event: 'medical_file_upload', fileRef: id.slice(0, 8), extension: file.originalname.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8), contentType: file.mimetype, bytes: file.size }));
     await this.storage.uploadFile({ key, body: file.buffer, contentType: file.mimetype });
     try {
       const { record, result } = await this.dataSource.transaction(async (manager) => {
@@ -80,16 +78,6 @@ export class RecordsService {
       await this.storage.deleteFile(key).catch(() => undefined);
       throw error;
     }
-  }
-  private matchesContentType(bytes: Buffer, contentType: string): boolean {
-    if (contentType === 'application/pdf') return bytes.subarray(0, 5).toString('ascii') === '%PDF-';
-    if (contentType === 'image/jpeg')
-      return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-    return (
-      contentType === 'image/png' &&
-      bytes.length >= 8 &&
-      bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-    );
   }
   async list(): Promise<MedicalFile[]> {
     return this.files.find({ relations: { results: { requirements: true } }, order: { uploadedAt: 'DESC' } });
