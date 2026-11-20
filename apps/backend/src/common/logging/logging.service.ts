@@ -13,8 +13,9 @@ export class LoggingService {
   }
 
   error(message: string, error?: any, meta?: any) {
-    const base = meta ? `${message} ${JSON.stringify(this.redact(meta))}` : message;
-    this.logger.error(base, error?.stack);
+    const details = meta ?? (error && !(error instanceof Error) ? error : undefined);
+    const base = details ? `${message} ${JSON.stringify(this.redact(details))}` : message;
+    this.logger.error(base, error instanceof Error ? error.stack : undefined);
   }
 
   warn(message: string, meta?: any) {
