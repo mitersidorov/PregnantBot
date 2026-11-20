@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { MedicalFile } from '../entities/medical-file.entity';
 import { MedicalResult } from '../entities/medical-result.entity';
@@ -43,7 +39,12 @@ describe('RecordsService uploads', () => {
       {} as never,
     );
     const uploaded = await service.upload(
-      { buffer: Buffer.from('arbitrary content'), size: 17, mimetype: 'application/x-custom', originalname: 'result.data' } as never,
+      {
+        buffer: Buffer.from('arbitrary content'),
+        size: 17,
+        mimetype: 'application/x-custom',
+        originalname: 'result.data',
+      } as never,
       101,
     );
     expect(dataSource.transaction).toHaveBeenCalledTimes(1);

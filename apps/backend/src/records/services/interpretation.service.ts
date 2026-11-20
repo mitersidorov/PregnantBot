@@ -125,7 +125,22 @@ export class InterpretationService {
         purpose: 'user_data',
       });
       fileId = uploaded.id;
-      this.logger.log(JSON.stringify({ event: 'interpretation_input_file', fileRef: hashText(fileId).slice(0, 12), extension: fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8), applicationMime: contentType, bytes: bytes.length, inputType: 'input_file', detail: contentType === 'application/pdf' ? 'high' : null }));
+      this.logger.log(
+        JSON.stringify({
+          event: 'interpretation_input_file',
+          fileRef: hashText(fileId).slice(0, 12),
+          extension: fileName
+            .split('.')
+            .pop()
+            ?.toLowerCase()
+            .replace(/[^a-z0-9]/g, '')
+            .slice(0, 8),
+          applicationMime: contentType,
+          bytes: bytes.length,
+          inputType: 'input_file',
+          detail: contentType === 'application/pdf' ? 'high' : null,
+        }),
+      );
       const prompt = extractionInstructionsFor(requirements);
       const schema = {
         type: 'object',
@@ -279,10 +294,14 @@ export class InterpretationService {
     } catch (error) {
       if (error instanceof ServiceUnavailableException || error instanceof BadGatewayException) throw error;
       const providerError = error instanceof OpenAI.APIError ? error : undefined;
-      if (providerError) this.logger.warn(JSON.stringify({ event: 'openai_response_error', ...safeOpenAIErrorDiagnostics(providerError) }));
-      const safeProviderError = providerError?.error && typeof providerError.error === 'object'
-        ? providerError.error as Record<string, unknown>
-        : undefined;
+      if (providerError)
+        this.logger.warn(
+          JSON.stringify({ event: 'openai_response_error', ...safeOpenAIErrorDiagnostics(providerError) }),
+        );
+      const safeProviderError =
+        providerError?.error && typeof providerError.error === 'object'
+          ? (providerError.error as Record<string, unknown>)
+          : undefined;
       this.logFailure(stage, {
         providerRequestId: providerError?.requestID ?? providerRequestId,
         providerStatus: providerError?.status,
