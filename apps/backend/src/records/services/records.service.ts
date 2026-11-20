@@ -40,7 +40,20 @@ export class RecordsService {
       throw new PayloadTooLargeException('File is required and must be at most 20 MB');
     const id = randomUUID();
     const key = `medical/${id}`;
-    this.logger.log(JSON.stringify({ event: 'medical_file_upload', fileRef: id.slice(0, 8), extension: file.originalname.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8), contentType: file.mimetype, bytes: file.size }));
+    this.logger.log(
+      JSON.stringify({
+        event: 'medical_file_upload',
+        fileRef: id.slice(0, 8),
+        extension: file.originalname
+          .split('.')
+          .pop()
+          ?.toLowerCase()
+          .replace(/[^a-z0-9]/g, '')
+          .slice(0, 8),
+        contentType: file.mimetype,
+        bytes: file.size,
+      }),
+    );
     await this.storage.uploadFile({ key, body: file.buffer, contentType: file.mimetype });
     try {
       const { record, result } = await this.dataSource.transaction(async (manager) => {
