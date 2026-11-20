@@ -4,7 +4,10 @@ import { AppExceptionFilter } from './app-exception.filter';
 
 function responseFor(exception: Error) {
   const json = jest.fn();
-  const status = jest.fn(() => ({ json }));
+  const status = jest.fn((statusCode: number) => {
+    void statusCode;
+    return { json };
+  });
   const filter = new AppExceptionFilter();
   filter.catch(exception, {
     switchToHttp: () => ({
