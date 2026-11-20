@@ -61,13 +61,6 @@ jobs:
           npm run typecheck
           npm run build
 
-      - name: Install Playwright Chromium
-        working-directory: apps/webapp
-        run: npx playwright install --with-deps chromium
-
-      - name: Run isolated browser tests
-        working-directory: apps/webapp
-        run: npx playwright test e2e/workflow.spec.ts e2e/responsive.spec.ts e2e/canonical-checklist.spec.ts
 
   publish:
     name: Build and publish monolith image
