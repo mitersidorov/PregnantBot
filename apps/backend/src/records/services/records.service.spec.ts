@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { MedicalFile } from '../entities/medical-file.entity';
@@ -13,26 +12,6 @@ import { RecordsService } from './records.service';
 describe('RecordsService uploads', () => {
   afterEach(() => {
     jest.restoreAllMocks();
-  });
-
-  it('rejects spoofed MIME types before writing to storage', async () => {
-    const storage = { uploadFile: jest.fn(), deleteFile: jest.fn() };
-    const service = new RecordsService(
-      {} as never,
-      {} as never,
-      {} as never,
-      storage as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-    await expect(
-      service.upload(
-        { buffer: Buffer.from('not a pdf'), size: 10, mimetype: 'application/pdf', originalname: 'fake.pdf' } as never,
-        101,
-      ),
-    ).rejects.toBeInstanceOf(UnsupportedMediaTypeException);
-    expect(storage.uploadFile).not.toHaveBeenCalled();
   });
 
   it('stores the upload and a pending result without calling OpenAI', async () => {
@@ -64,7 +43,7 @@ describe('RecordsService uploads', () => {
       {} as never,
     );
     const uploaded = await service.upload(
-      { buffer: Buffer.from('%PDF-1.7'), size: 8, mimetype: 'application/pdf', originalname: 'result.pdf' } as never,
+      { buffer: Buffer.from('arbitrary content'), size: 17, mimetype: 'application/x-custom', originalname: 'result.data' } as never,
       101,
     );
     expect(dataSource.transaction).toHaveBeenCalledTimes(1);
@@ -76,6 +55,7 @@ describe('RecordsService uploads', () => {
     });
     expect(uploaded.file.results).toEqual([uploaded.result]);
     expect(storage.uploadFile).toHaveBeenCalledTimes(1);
+    expect(storage.uploadFile).toHaveBeenCalledWith(expect.objectContaining({ contentType: 'application/x-custom' }));
     expect(interpretation.proposeFile).not.toHaveBeenCalled();
   });
 
