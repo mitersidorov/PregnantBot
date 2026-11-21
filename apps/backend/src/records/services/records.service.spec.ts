@@ -42,8 +42,8 @@ describe('RecordsService uploads', () => {
       {
         buffer: Buffer.from('arbitrary content'),
         size: 17,
-        mimetype: 'application/x-custom',
-        originalname: 'result.data',
+        mimetype: 'application/pdf',
+        originalname: 'Report.PDF',
       } as never,
       101,
     );
@@ -55,8 +55,9 @@ describe('RecordsService uploads', () => {
       requirements: [],
     });
     expect(uploaded.file.results).toEqual([uploaded.result]);
+    expect(uploaded.file.originalName).toBe('report.pdf');
     expect(storage.uploadFile).toHaveBeenCalledTimes(1);
-    expect(storage.uploadFile).toHaveBeenCalledWith(expect.objectContaining({ contentType: 'application/x-custom' }));
+    expect(storage.uploadFile).toHaveBeenCalledWith(expect.objectContaining({ contentType: 'application/pdf' }));
     expect(interpretation.proposeFile).not.toHaveBeenCalled();
   });
 

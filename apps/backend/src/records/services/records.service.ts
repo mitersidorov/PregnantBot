@@ -62,7 +62,10 @@ export class RecordsService {
             id,
             uploadedBy: String(userId),
             objectKey: key,
-            originalName: file.originalname.replace(/[\\/\r\n]/g, '_').slice(0, 255),
+            originalName: file.originalname
+              .replace(/[\\/\r\n]/g, '_')
+              .toLowerCase()
+              .slice(0, 255),
             contentType: file.mimetype,
             byteSize: file.size,
           }),

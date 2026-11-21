@@ -1,5 +1,10 @@
 # Changelog
 
+## [codex/lowercase-upload-filenames] — 2026-11-22
+
+### Fixed
+- Store uploaded filenames in lowercase and send lowercase filenames to OpenAI, including for previously uploaded files.
+
 ## [dev/pregnantbot-implementation] — 2026-11-15
 
 ### Added
