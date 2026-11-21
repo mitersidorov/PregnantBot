@@ -5,6 +5,60 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Readable } from 'node:stream';
 import { LoggingService } from '../logging/logging.service';
 
+// Allowlist SDK diagnostics; never serialize raw responses, requests, or provider errors.
+const safeText = (value: unknown) =>
+  typeof value === 'string' &&
+  value.length <= 160 &&
+  /^[\w .,:;()'-]+$/.test(value) &&
+  !/authorization|credential|secret|signature|token|password/i.test(value)
+    ? value
+    : undefined;
+const safeId = (value: unknown) =>
+  typeof value === 'string' && /^[A-Za-z0-9_.:+=/"-]{1,160}$/.test(value) ? value : undefined;
+function s3Metadata(value: unknown): Record<string, unknown> {
+  const metadata =
+    value && typeof value === 'object' && '$metadata' in value && value.$metadata && typeof value.$metadata === 'object'
+      ? (value.$metadata as Record<string, unknown>)
+      : {};
+  const number = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+  return {
+    status: number(metadata.httpStatusCode),
+    requestId: safeId(metadata.requestId),
+    extendedRequestId: safeId(metadata.extendedRequestId),
+    cfId: safeId(metadata.cfId),
+    attempts: number(metadata.attempts),
+    totalRetryDelay: number(metadata.totalRetryDelay),
+  };
+}
+function s3ErrorDetails(error: unknown): Record<string, unknown> {
+  const extract = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object') return {};
+    const e = value as Record<string, unknown>;
+    return {
+      name: safeText(e.name),
+      code: safeText(e.Code ?? e.code),
+      type: safeText(e.$fault),
+      ...s3Metadata(value),
+    };
+  };
+  const e = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
+  return { ...extract(error), cause: extract(e.cause) };
+}
+
+function s3UploadDetails(value: unknown): Record<string, unknown> {
+  const response = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    ...s3Metadata(value),
+    etag: safeId(response.ETag),
+    versionId: safeId(response.VersionId),
+    checksumCRC32: safeId(response.ChecksumCRC32),
+    checksumCRC32C: safeId(response.ChecksumCRC32C),
+    checksumCRC64NVME: safeId(response.ChecksumCRC64NVME),
+    checksumSHA1: safeId(response.ChecksumSHA1),
+    checksumSHA256: safeId(response.ChecksumSHA256),
+  };
+}
+
 @Injectable()
 export class S3StorageService {
   private readonly s3Client: S3Client;
@@ -51,7 +105,7 @@ export class S3StorageService {
     const { key, body, contentType, metadata } = params;
 
     try {
-      await this.s3Client.send(
+      const response = await this.s3Client.send(
         new PutObjectCommand({
           Bucket: this.bucket,
           Key: key,
@@ -60,29 +114,9 @@ export class S3StorageService {
           Metadata: metadata,
         }),
       );
-      this.logger.info('File uploaded to S3');
+      this.logger.info('File uploaded to S3', s3UploadDetails(response));
     } catch (error) {
-      const e = error as {
-        name?: unknown;
-        $metadata?: {
-          httpStatusCode?: unknown;
-          requestId?: unknown;
-          extendedRequestId?: unknown;
-          attempts?: unknown;
-          totalRetryDelay?: unknown;
-        };
-        Code?: unknown;
-      };
-      const safe = (v: unknown) => (typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(v) ? v : undefined);
-      this.logger.error('S3 upload failed', {
-        errorName: safe(e?.name),
-        errorCode: safe(e?.Code),
-        status: typeof e?.$metadata?.httpStatusCode === 'number' ? e.$metadata.httpStatusCode : undefined,
-        requestId: safe(e?.$metadata?.requestId),
-        extendedRequestId: safe(e?.$metadata?.extendedRequestId),
-        attempts: typeof e?.$metadata?.attempts === 'number' ? e.$metadata.attempts : undefined,
-        totalRetryDelay: typeof e?.$metadata?.totalRetryDelay === 'number' ? e.$metadata.totalRetryDelay : undefined,
-      });
+      this.logger.error('S3 upload failed', undefined, s3ErrorDetails(error));
       throw new InternalServerErrorException({ message: 'S3 storage operation failed.', errorCode: 'S3_ERROR' });
     }
   }
@@ -91,8 +125,8 @@ export class S3StorageService {
     try {
       await this.s3Client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
       this.logger.info('File deleted from S3');
-    } catch {
-      this.logger.error('S3 delete failed');
+    } catch (error) {
+      this.logger.error('S3 delete failed', undefined, s3ErrorDetails(error));
       throw new InternalServerErrorException({ message: 'S3 storage operation failed.', errorCode: 'S3_ERROR' });
     }
   }
@@ -102,8 +136,8 @@ export class S3StorageService {
       const result = await this.s3Client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
       if (!result.Body) throw new Error('Empty S3 object');
       return Buffer.from(await result.Body.transformToByteArray());
-    } catch {
-      this.logger.error('S3 download failed');
+    } catch (error) {
+      this.logger.error('S3 download failed', undefined, s3ErrorDetails(error));
       throw new InternalServerErrorException({ message: 'S3 storage operation failed.', errorCode: 'S3_ERROR' });
     }
   }
@@ -113,8 +147,8 @@ export class S3StorageService {
       const result = await this.s3Client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
       if (!result.Body) throw new Error('Empty S3 object');
       return Readable.fromWeb(result.Body.transformToWebStream() as never);
-    } catch {
-      this.logger.error('S3 download failed');
+    } catch (error) {
+      this.logger.error('S3 download failed', undefined, s3ErrorDetails(error));
       throw new InternalServerErrorException({ message: 'S3 storage operation failed.', errorCode: 'S3_ERROR' });
     }
   }
@@ -130,8 +164,8 @@ export class S3StorageService {
         }),
         { expiresIn: 60 },
       );
-    } catch {
-      this.logger.error('S3 signed URL generation failed');
+    } catch (error) {
+      this.logger.error('S3 signed URL generation failed', undefined, s3ErrorDetails(error));
       throw new InternalServerErrorException({ message: 'S3 storage operation failed.', errorCode: 'S3_ERROR' });
     }
   }
