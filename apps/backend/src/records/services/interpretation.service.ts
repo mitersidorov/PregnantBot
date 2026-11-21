@@ -121,7 +121,7 @@ export class InterpretationService {
     let providerRequestId: string | null | undefined;
     try {
       const uploaded = await this.client.files.create({
-        file: await toFile(bytes, fileName, { type: contentType }),
+        file: await toFile(bytes, fileName.toLowerCase(), { type: contentType }),
         purpose: 'user_data',
       });
       fileId = uploaded.id;

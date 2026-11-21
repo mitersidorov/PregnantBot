@@ -66,6 +66,10 @@ describe('InterpretationService', () => {
     const expectedFinding = { ...providerOutput.findings[0], testName: 'Общий анализ крови' };
     const expectedOutput = { ...expectedFinding, findings: [expectedFinding] };
     let capturedRequest: Record<string, unknown> | undefined;
+    const filesCreate = jest.fn(async (request: { file: File }) => {
+      expect(request.file.name).toBe('report.pdf');
+      return { id: 'provider-file' };
+    });
     const responsesCreate = jest.fn(async (request: Record<string, unknown>) => {
       capturedRequest = request;
       return completedResponse(JSON.stringify(providerOutput));
@@ -73,17 +77,18 @@ describe('InterpretationService', () => {
     const service = new InterpretationService();
     (service as unknown as { client: unknown }).client = {
       files: {
-        create: jest.fn(async () => ({ id: 'provider-file' })),
+        create: filesCreate,
         delete: jest.fn(async () => undefined),
       },
       responses: { create: responsesCreate },
     };
 
     await expect(
-      service.proposeFile(Buffer.from('synthetic document'), 'result.pdf', 'application/pdf', [
+      service.proposeFile(Buffer.from('synthetic document'), 'Report.PDF', 'application/pdf', [
         { id: 'h-cbc', name: 'Complete blood count (CBC)' },
       ]),
     ).resolves.toEqual(expectedOutput);
+    expect(filesCreate).toHaveBeenCalledTimes(1);
 
     expect(capturedRequest).toMatchObject({
       input: [
